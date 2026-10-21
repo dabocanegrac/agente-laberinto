@@ -1,0 +1,15 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Arduino / editores
+build/
+.vscode/
+.idea/
+
+# Sistema
+.DS_Store
+Thumbs.db
+desktop.ini
