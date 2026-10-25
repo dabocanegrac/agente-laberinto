@@ -1,6 +1,6 @@
 # agente-laberinto
 
-Agente que resuelve un laberinto impreso: conoce el mapa de antemano, planea la ruta con **BFS** (A* opcional) y la ejecuta en un carro 2WD con Arduino UNO, usando sensores IR para detectar paredes y corregir la deriva.
+Agente que resuelve un laberinto impreso: conoce el mapa de antemano, planea la ruta con **BFS** (A* opcional) y la ejecuta en un carro 2WD con ESP32-S3 (Arduino UNO como plan B), usando sensores IR para detectar paredes y corregir la deriva.
 
 Ciclo del agente: **percibir → planear → actuar**.
 
@@ -31,38 +31,39 @@ agente-laberinto/
 2. **Salida del planificador:** lista de movimientos relativos, por ejemplo `F F L F R`.
    - `F`: avanzar una celda
    - `L` / `R`: girar 90° a la izquierda / derecha
-3. **Interfaz de movimiento (Arduino):** `avanzar()`, `girar(IZQ|DER)`, `parar()`. Todos los pines y constantes están en `arduino/agente/pines.h`.
+3. **Interfaz de movimiento (Arduino):** `avanzar()`, `girar(IZQ|DER)`, `parar()`. Los pines están en `arduino/agente/src/config/pines*.h` y los valores por defecto en `parametros.h`.
 
 ## Hardware
 
 | Pieza | Detalle |
 |---|---|
-| Placa | Arduino UNO R3 compatible (ATmega328P, CH340). En el IDE: "Arduino Uno" |
+| Placa | ESP32-S3 N16R8 de 44 pines + shield de expansión con jack DC (6.5-9V). Plan B: Arduino UNO R3 (CH340) |
 | Chasis | Acrílico GPR V2.0 2WD |
-| Motores | 2x motorreductor TT 6V 1:48, sin encoders |
-| Llantas | 6.5 cm de diámetro |
+| Motores | 2x motorreductor N20-10, 6V, 500 RPM, sin encoders (rápido y de poco torque) |
+| Llantas | 43 mm de diámetro, 19 mm de ancho, eje D de 3 mm (≈1.1 m/s a 500 RPM) |
 | Driver | L298N |
 | Sensores | 3x TCRT5000, salida analógica (AO) |
 | Energía motores | 4xAA en serie (6V) al borne 12V del L298N |
-| Energía Arduino | Batería de 9V al jack |
+| Energía placa | Batería de 9V al jack DC del shield (o del UNO). **Nunca USB y batería al tiempo** |
 
 ## Cableado
 
-| Función | Pin Arduino |
-|---|---|
-| ENA (PWM motor A) | D5 |
-| IN1 | D7 |
-| IN2 | D8 |
-| IN3 | D9 |
-| IN4 | D10 |
-| ENB (PWM motor B) | D6 |
-| Sensor izquierdo (AO) | A0 |
-| Sensor centro (AO) | A1 |
-| Sensor derecho (AO) | A2 |
+Los pines están en `arduino/agente/src/config/` (`pines.h` elige el archivo según la placa).
+
+| Función | ESP32-S3 (GPIO) | UNO |
+|---|---|---|
+| ENA (PWM motor A = llanta derecha) | 7 | D5 |
+| IN1 / IN2 | 15 / 16 | D7 / D8 |
+| ENB (PWM motor B = llanta izquierda) | 8 | D6 |
+| IN3 / IN4 | 17 / 18 | D9 / D10 |
+| Sensor izquierdo / centro / derecho (AO) | 4 / 5 / 6 | A0 / A1 / A2 |
+| Alimentación de los sensores | 3.3V (filas G/V/S del shield) | 5V |
 
 - Jumpers ENA, ENB y 5V del L298N quitados.
-- El borne 5V del L298N se alimenta desde el 5V del Arduino.
-- Tierra común entre L298N, Arduino y sensores.
+- El borne 5V del L298N se alimenta desde el 5V de la placa (shield o UNO).
+- Tierra común entre L298N, placa y sensores.
+- Adelante = IN1=H/IN2=L (derecha) e IN3=H/IN4=L (izquierda), sin invertir motores.
+- En la ESP32-S3 no usar GPIO 35-37 (PSRAM), 0/3/45/46 (arranque), 19/20 (USB nativo) ni 43/44 (UART).
 - Motor A en OUT1-OUT2, motor B en OUT3-OUT4.
 
 ## Cómo correr
@@ -74,15 +75,34 @@ python pc/bfs.py maps/mapa1.txt
 python pc/simulador.py maps/mapa1.txt
 ```
 
-### Arduino
+### ESP32-S3
 
-Abrir el sketch en el Arduino IDE, seleccionar la placa "Arduino Uno" y el puerto COM del CH340, y subir. Monitor Serial a 115200 baudios.
+Core `esp32:esp32` 3.3.x. Se programa por el USB-C marcado "COM" (chip CH343). Monitor Serial a 115200 baudios.
 
-Orden sugerido de pruebas:
-1. `arduino/pruebas/prueba_motores`: identificar motor izquierdo/derecho y sentido de giro.
-2. `arduino/pruebas/prueba_sensores`: calibrar umbral y polaridad (Serial Plotter).
-3. `arduino/pruebas/calibracion_movimiento`: encontrar `T_CELDA_MS` y `T_GIRO90_MS`.
-4. `arduino/agente`: recorrido completo.
+```
+FQBN=esp32:esp32:esp32s3:FlashSize=16M,PSRAM=opi,CDCOnBoot=default,PartitionScheme=app3M_fat9M_16MB
+arduino-cli compile --fqbn $FQBN --output-dir build/<sketch> arduino/<ruta>/<sketch>
+arduino-cli upload -p <puerto> --fqbn $FQBN arduino/<ruta>/<sketch>
+```
+
+En el IDE: placa "ESP32S3 Dev Module", Flash Size 16MB, PSRAM "OPI PSRAM", Partition Scheme "16M Flash (3MB APP/9.9MB FATFS)". Después de la primera carga se puede flashear por Wi-Fi (OTA), ver `docs/ARQUITECTURA.md`.
+
+### Arduino UNO (plan B)
+
+Placa "Arduino Uno" y el puerto COM del CH340.
+
+### Sketches
+
+| Sketch | Placa | Para qué |
+|---|---|---|
+| `arduino/control_remoto` | S3 | Manejar el carro desde el celular y ver los sensores. Red `agente-laberinto`, página en http://192.168.4.1 |
+| `arduino/pruebas/diagnostico_esp32s3` | S3 | Lectura de los sensores por Serial |
+| `arduino/pruebas/prueba_motores_esp32s3` | S3 | Identificar motor izquierdo/derecho y sentido de giro |
+| `arduino/pruebas/prueba_alimentacion_esp32s3` | S3 | Arranques de motores para buscar reinicios por brownout |
+| `arduino/pruebas/wifi_ota_esp32s3` | S3 | Wi-Fi AP, comandos por TCP y OTA |
+| `arduino/pruebas/diagnostico` | UNO | Vcc y sensores por Serial |
+| `arduino/pruebas/prueba_motores` | UNO | Igual que la versión S3 |
+| `arduino/agente` | las dos | Firmware final (en construcción) |
 
 ## Calibración en el sitio
 
