@@ -10,16 +10,35 @@ Proyecto de la clase de IA, Universidad Nacional.
 
 ```
 agente-laberinto/
-├── maps/                 # mapas en el formato compartido (PC y Arduino)
-├── pc/
-│   ├── bfs.py            # BFS: mapa -> lista de movimientos
-│   ├── astar.py          # opcional, con métricas
-│   └── simulador.py      # dibuja el mapa y ejecuta la lista de movimientos
+├── maps/
+│   ├── fisicos/          # mapas que se imprimen para la demo (+ .esperado con la ruta de BFS)
+│   └── simulados/        # mapas para probar y comparar algoritmos
+├── pc/                   # Python: planificador, simulador, envío al carro
+│   ├── mapa.py           # leer y validar el formato del mapa
+│   ├── modelo.py         # estado (fila, col, orientación), acciones F/L/R y costos
+│   ├── planners/         # un archivo por algoritmo (bfs.py, ...)
+│   ├── planear.py        # CLI: python -m pc.planear <mapa> --algo <nombre|all>
+│   └── tests/            # corren solos con todos los algoritmos y todos los mapas
+├── resultados/           # tablas de comparación para el informe
 ├── arduino/
-│   ├── pruebas/          # sketches sueltos: motores, sensores, calibración
-│   └── agente/           # sketch final: PLANEAR -> EJECUTAR
-└── docs/                 # informe PDF, fotos y videos de pruebas
+│   ├── agente/           # firmware final
+│   ├── control_remoto/   # manejar y calibrar el carro por Wi-Fi
+│   └── pruebas/          # sketches sueltos, uno por carpeta
+└── docs/                 # arquitectura, informe, fotos
 ```
+
+## Cómo agregar un algoritmo
+
+1. Crear `pc/planners/<nombre>.py` con una clase `@registrar` que herede de `Planner` (ver el ejemplo en `pc/planners/bfs.py` y el contrato en `pc/planners/base.py`).
+2. Poner `optimiza = "acciones"`, `"costo"` o `None` según lo que garantice el algoritmo. Los tests verifican esa promesa.
+3. Correr `python -m pytest`. No hay que tocar nada más: `planear.py` y los tests lo encuentran solos.
+
+## Cómo trabajamos con git
+
+- `main` está protegida: todo entra por **pull request** con **1 aprobación** de otro integrante.
+- Una rama por cosa: `algo/astar`, `firmware/movimiento`, `mapas/mapa1`, ...
+- Ramas cortas y PRs pequeños; se mezclan con *squash* y la rama se borra sola.
+- Antes de abrir el PR: `python -m pytest` en verde.
 
 ## Contratos
 
@@ -69,9 +88,13 @@ agente-laberinto/
 
 ### PC (Python 3)
 
+Python 3.10 o más reciente. Desde la raíz del repo:
+
 ```
-python pc/bfs.py maps/mapa1.txt
-python pc/simulador.py maps/mapa1.txt
+pip install pytest
+python -m pc.planear maps/simulados/ejemplo_5x5.txt              # ruta de BFS
+python -m pc.planear maps/simulados/ejemplo_5x5.txt --algo all   # tabla con todos los algoritmos
+python -m pytest                                                 # tests
 ```
 
 ### Arduino

@@ -1,0 +1,13 @@
+[project]
+name = "agente-laberinto"
+version = "0.1.0"
+description = "Planificador y simulador del agente que resuelve un laberinto"
+requires-python = ">=3.10"
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[tool.pytest.ini_options]
+testpaths = ["pc/tests"]
+pythonpath = ["."]

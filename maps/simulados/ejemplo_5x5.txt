@@ -1,0 +1,24 @@
+# Mapa de ejemplo para probar el código (no es el mapa 1 de la demo).
+#
+#   +-+-+-+-+-+
+#   |S . .|. .|      S = inicio (0,0) mirando al E
+#   +-+-+ + + +      M = meta (4,4)
+#   |. .|. .|.|
+#   + + +-+-+ +
+#   |.|. . . .|
+#   + +-+-+ + +
+#   |. . .|.|.|
+#   +-+ + + + +
+#   |. .|. . M|
+#   +-+-+-+-+-+
+#
+# filas columnas
+5 5
+inicio 0 0 E
+meta 4 4
+# N=1 E=2 S=4 O=8
+13 5 3 9 3
+9 3 12 6 10
+10 12 5 1 2
+12 1 3 10 10
+13 6 12 4 6
