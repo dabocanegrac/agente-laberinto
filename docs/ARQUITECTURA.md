@@ -4,7 +4,7 @@ Agente que resuelve un laberinto conocido: **percibir → planear → actuar**.
 El diseño tiene dos objetivos:
 
 1. **Soportar varios algoritmos** de búsqueda sin tocar el código del carro.
-2. **Correr en dos placas**: Arduino UNO (la de la demo, ya probada) y ESP32-S3 N16R8 (mejora: Wi-Fi, flasheo sin cable, más RAM).
+2. **Correr en dos placas**: ESP32-S3 N16R8 (la de la demo: Wi-Fi, flasheo sin cable, más RAM) y Arduino UNO (plan B, ya probado).
 
 ## 1. Capas
 
@@ -216,9 +216,9 @@ Los parámetros se guardan en EEPROM o Preferences, así que **calibrar no impli
 
 El código de `src/planner/` no puede incluir `Arduino.h`, para que compile con `g++` en el PC y se compare contra Python.
 
-## 5. Plataforma de la demo: UNO primero, ESP32-S3 si da el tiempo
+## 5. Plataforma de la demo: ESP32-S3
 
-**La demo va con el UNO** (ya está cableado y probado). El ESP32-S3 avanza en paralelo, en banco, y **solo reemplaza al UNO si cumple los criterios de cambio** a tiempo.
+**Decidido el 25/10/2026 (DEC-06): la demo va con la ESP32-S3.** Ya está montada en el carro, con Wi-Fi, OTA y control remoto funcionando. El UNO queda como **plan B**: el mismo firmware compila para las dos placas, así que se puede volver a montar si la S3 falla.
 
 ### 5.1 Fases del ESP32-S3
 
@@ -230,20 +230,17 @@ El código de `src/planner/` no puede incluir `Arduino.h`, para que compile con 
 | E3 | Motores con el L298N a 3.3V lógico | `prueba_motores` pasa igual que en el UNO |
 | E4 | Alimentación: batería de 9V al jack DC del shield, GND común con el L298N | ~5V medidos en el shield sin la placa; sin reinicios (brownout) al arrancar los motores; regulador tibio, no hirviendo |
 | E5 | Wi-Fi AP + comandos por Telnet/WebSocket + OTA | flashear y calibrar sin cable |
-| E6 | Recalibrar y recorrer el mapa 1 | ver criterios |
+| E6 | Recalibrar y recorrer el mapa 1 | 3 de 3 recorridos completos, sin reinicios |
 
 E2 va de primero a propósito: es el riesgo más grande, porque con el LED IR más débil se puede perder el contraste.
 
-### 5.2 Criterios de cambio (lunes 26/10, 12:00)
+### 5.2 Plan B: volver al UNO
 
-El ESP32-S3 reemplaza al UNO en la demo **solo si cumple todo esto**:
+Para que el UNO siga siendo una opción real el día de la demo:
 
-1. Recorre el mapa 1 completo **3 de 3 veces**, igual o mejor que el UNO.
-2. Cero reinicios con los motores andando, con pilas nuevas.
-3. Se puede recalibrar en el sitio desde el celular o el laptop, por Wi-Fi en modo AP.
-4. El UNO sigue montable en menos de 15 minutos como plan B (mismo chasis, cables marcados).
-
-Si no se cumple alguno, **la demo va con el UNO** y el ESP32 se menciona en el informe como trabajo futuro, con lo que se haya avanzado.
+1. El firmware de `arduino/agente` tiene que seguir compilando para las dos placas (sin `#if` fuera de la HAL).
+2. Llevar el UNO y los cables marcados; montarlo debe tomar menos de 15 minutos (mismo chasis).
+3. Sin Wi-Fi, la calibración y la ruta van por Serial desde el laptop.
 
 ### 5.3 Compras y montaje
 
@@ -278,19 +275,18 @@ Reglas:
 
 No hace falta: HC-05, step-down, power bank ni convertidor de niveles.
 
-## 6. Cronograma con las dos plataformas
+## 6. Cronograma
 
-| Fecha | Camino principal (UNO) | Camino ESP32-S3 (paralelo) |
-|---|---|---|
-| Mar 20/10 | Circuito verificado ✅, repo ✅ | |
-| Mié 21/10 | **Corte 1:** BFS en PC, formato del mapa | |
-| Jue 22/10 | Simulador, prueba de tinta, HAL + comandos en el UNO | E0: el sketch compila para ESP32 |
-| Vie 23/10 | Calibración por comandos, más algoritmos en PC | E1-E3 en banco |
-| Sáb 24/10 | Movimiento calibrado, ruta por Serial | E4-E5 |
-| Dom 25/10 | Integración: mapa 1 con UNO | E6 |
-| Lun 26/10 | Integración y comparación de algoritmos en el carro | **12:00 decisión UNO / ESP32** |
-| Mar 27/10 | Ensayo en exterior, README e informe | (solo la plataforma elegida) |
-| Mié 28/10 | **Presentación** | |
+| Fecha | Qué |
+|---|---|
+| Mar 20/10 | Circuito verificado con el UNO ✅, repo ✅ |
+| Mié 21/10 | **Corte 1:** BFS en PC, formato del mapa |
+| Jue 22/10 | Simulador, prueba de tinta |
+| Vie 23/10 - Sáb 24/10 | ESP32-S3: E1-E5 (sensores, motores, alimentación, Wi-Fi, OTA, control remoto) ✅ |
+| Dom 25/10 | DEC-06: la demo va con la S3 ✅. Estructura de `pc/` y BFS |
+| Lun 26/10 | Firmware del agente, calibración por Wi-Fi, E6: recorrer el mapa 1 |
+| Mar 27/10 | Comparación de algoritmos en el carro, ensayo en exterior, README e informe |
+| Mié 28/10 | **Presentación** |
 
 ## 7. Riesgos
 
@@ -299,10 +295,10 @@ No hace falta: HC-05, step-down, power bank ni convertidor de niveles.
 | La tinta del plotter no absorbe IR | Probarla ya (LAB-03); plan B con cinta aislante |
 | El sol satura los sensores | Faldita de cartón; recalibrar el umbral con `SET UMBRAL` en el sitio |
 | Los tiempos cambian con el voltaje de las pilas | Pilas nuevas; `SET T_CELDA` / `T_GIRO` en el sitio |
-| El ESP32 pierde contraste a 3.3V | Fase E2 primero; si falla, se queda el UNO |
-| El ESP32 se reinicia por los picos de los motores | Alimentación separada (9V al shield para la lógica, AA para los motores) + condensador; criterio 2 |
+| El ESP32 pierde contraste a 3.3V | Medido en E2: blanco ~35-57 y cinta ~250-860, contraste suficiente. Recalibrar el umbral en el sitio |
+| El ESP32 se reinicia por los picos de los motores | Alimentación separada (9V al shield para la lógica, AA para los motores) + condensador |
 | La batería de 9V se agota rápido | **Pasó el 23/10:** con 7.67V en reposo, el ESP32 entró en bucle de brownout al prender el Wi-Fi. Medir antes de cada sesión (nueva ≈ 9.5V; cambiarla por debajo de ~8.5V). Potencia del Wi-Fi bajada a 8.5 dBm. Batería de repuesto en la demo |
 | Motores sin torque (pitan al girar en el eje) | Son N20 6V 500 RPM (reducción baja) y el L298N se come ~2V: con 4xAA les llegan ~4V. Ya se agregó arranque con golpe y PWM mínimo para giros. Siguiente paso: 6xAA (9V) + `PWMMAX` ~85%. A futuro: N20 6V de 100-200 RPM **con encoder** |
 | Brownout al conectar la batería | Es el rebote del plug en el jack: un solo reinicio al conectar no es problema. Meter el plug firme, de una vez |
 | El puerto serial cambia en el Mac (`/dev/cu.usbserial-*`) | Los scripts reciben `--puerto`; probar el Mac con el UNO y el ESP32 antes de la demo |
-| Migración a medias el día de la demo | La decisión es el 26/10 a las 12:00, sin excepciones |
+| La S3 falla el día de la demo | Plan B con el UNO (sección 5.2) |
