@@ -1,0 +1,6 @@
+# Finales de línea LF en el repo, sin importar si se trabaja en Windows o Mac
+* text=auto eol=lf
+*.xlsx binary
+*.pdf binary
+*.png binary
+*.jpg binary
