@@ -89,7 +89,7 @@ El carro valida el mapa, lo guarda (sobrevive a un reinicio), calcula la ruta y 
 ### Imprimir o armar el laberinto
 
 ```
-python -m pc.imprimir maps/fisicos/mapa1.txt --celda 22 --linea 2 --margen 5
+python -m pc.imprimir maps/fisicos/mapa1.txt --celda 24 --linea 2 --margen 5
 ```
 
 Genera en `build/impresion/`:

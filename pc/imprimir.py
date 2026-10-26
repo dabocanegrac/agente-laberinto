@@ -1,7 +1,7 @@
 """Convierte un mapa en PDF para armar el laberinto físico.
 
     python -m pc.imprimir maps/fisicos/mapa1.txt                 # los dos PDF
-    python -m pc.imprimir maps/fisicos/mapa1.txt --celda 22 --linea 2 --margen 5
+    python -m pc.imprimir maps/fisicos/mapa1.txt --celda 24 --linea 2 --margen 5
 
 Genera en build/impresion/:
   <mapa>_plotter.pdf   escala 1:1, una sola página del tamaño del laberinto. Imprimir al 100 % (sin
@@ -301,7 +301,7 @@ def pdf_armado(m, ps, ruta_pdf, celda, linea, margen, pliego):
 def main(argv=None):
     p = argparse.ArgumentParser(description="Genera los PDF para imprimir o armar el laberinto.")
     p.add_argument("mapa")
-    p.add_argument("--celda", type=float, default=22.0, help="cm entre centros de líneas (DEC-02)")
+    p.add_argument("--celda", type=float, default=24.0, help="cm entre centros de líneas (DEC-02)")
     p.add_argument("--linea", type=float, default=2.0, help="grosor de la línea en cm")
     p.add_argument("--margen", type=float, default=5.0, help="margen blanco alrededor, en cm")
     p.add_argument("--pliego", default="70x100", help="tamaño del pliego de cartulina negra, en cm")
