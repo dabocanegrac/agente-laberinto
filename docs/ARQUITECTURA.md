@@ -176,10 +176,12 @@ Texto, una línea por comando, por `Serial` (115200) o por TCP en `192.168.4.1:2
 | `RUTA` | imprime la última ruta | ✅ |
 | `COSTO_GIRO <v>` | costo de L/R y vuelve a planear | ✅ |
 | `INFO` / `STOP` | estado / parar motores | ✅ |
-| `GO` | ejecuta la ruta | por hacer |
-| `PASO F` | ejecuta un solo movimiento (para calibrar) | por hacer |
-| `SET <param> <valor>` / `GET` / `SAVE` | `T_CELDA`, `T_GIRO`, `PWM`, `COMP_IZQ`, `COMP_DER`, `UMBRAL`, `KP` | por hacer |
-| `SENS` | lectura de los 3 sensores | por hacer |
+| `GO` | recorre la ruta desde la celda de inicio | ✅ compila, sin probar en el carro |
+| `PASO F [n]` / `PASO L` / `PASO R` / `PASO A` | un movimiento suelto, para calibrar (`A` = avanzar hasta la línea y alinearse) | ✅ compila, sin probar |
+| `SET <param> <valor>` / `GET` / `SAVE` | `t_celda`, `t_giro`, `pwm`, `pwm_giro`, `comp`, `kp`, `umbral`, `t_alinear`, `t_freno`, `pausa` (`src/config/parametros.h`) | ✅ compila, sin probar |
+| `SENS` / `SENS ON` / `SENS OFF` | lectura de los 3 sensores | ✅ compila, sin probar |
+
+Desde el PC, `python -m pc.consola` abre una consola TCP con el carro (una línea vacía manda `STOP`). El orden de calibración está en `docs/HANDOFF.md`.
 
 Ejemplo:
 ```
@@ -201,7 +203,7 @@ Los parámetros se guardan en Preferences, así que **calibrar no implica recomp
 
 ### 4.5 Alinear con las paredes
 
-Con el carro centrado en una celda (eje de las ruedas en el centro), el sensor frontal queda 16 cm adelante: 4 cm más allá del centro de la línea de enfrente (celda de 24 cm, media celda = 12 cm). Al avanzar hacia una pared, el sensor frontal pisa la línea cuando al eje le faltan ~4 cm para el centro: **al ver la línea, avanzar ~4 cm y parar** (el valor exacto se calibra). Eso borra el error acumulado de avanzar por tiempo. El sensor frontal se ignora durante los giros.
+Con el carro centrado en una celda (eje de las ruedas en el centro), el sensor frontal queda 16 cm adelante: 4 cm más allá del centro de la línea de enfrente (celda de 24 cm, media celda = 12 cm). Al avanzar hacia una pared, el sensor frontal pisa la línea cuando al eje le faltan ~4 cm para el centro: **al ver la línea, avanzar ~4 cm y parar** (el valor exacto se calibra con `t_alinear`). Con la celda de 22 cm del impreso de prueba son ~6 cm. Eso borra el error acumulado de avanzar por tiempo. El sensor frontal se ignora durante los giros.
 
 ## 5. Laberinto físico
 

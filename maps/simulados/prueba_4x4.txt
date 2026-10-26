@@ -1,6 +1,8 @@
 # Mapa de prueba de 4x4 (no es el mapa 1 de la demo).
 # A 24 cm por celda mide 98 x 98 cm (108 x 108 con el margen): más ancho que un rollo de plotter de 91 cm,
 # así que este se arma con cinta o cartulina (python -m pc.imprimir da el plano).
+# Se imprimió en el plotter con celda de 22 cm y margen de 0.5 cm (91 x 91 cm) para la primera prueba:
+#   python -m pc.imprimir maps/simulados/prueba_4x4.txt --celda 22 --margen 0.5
 #
 #   +-+-+-+-+
 #   |     | |
