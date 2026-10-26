@@ -1,0 +1,26 @@
+# Mapa de prueba de 4x4 (no es el mapa 1 de la demo).
+# A 22 cm por celda el laberinto mide 90 x 90 cm; con 5 cm de margen, la hoja es de 100 x 100 cm.
+# En un rollo de 91 cm: python -m pc.imprimir <mapa> --margen 0.5 y poner el impreso sobre una base blanca.
+#
+#   +-+-+-+-+
+#   |     | |
+#   +-+-+ + +
+#   |   |   |
+#   + + + +-+
+#   | |   | |
+#   + +-+-+ +
+#   |       |
+#   +-+-+-+-+
+#
+# S = inicio (0,0) mirando al E; M = meta (3,3).
+inicio 0 0 E
+meta 3 3
+111111111
+100000101
+111110101
+100010001
+101010111
+101000101
+101111101
+100000001
+111111111
