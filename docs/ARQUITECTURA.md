@@ -201,11 +201,12 @@ Los parámetros se guardan en Preferences, así que **calibrar no implica recomp
 
 ### 4.5 Alinear con las paredes
 
-Con el carro centrado en una celda (eje de las ruedas en el centro), el sensor frontal queda 16 cm adelante: 5 cm más allá de la línea de enfrente (celda de 22 cm). Al avanzar hacia una pared, el sensor frontal pisa la línea cuando al eje le faltan 5 cm para el centro: **al ver la línea, avanzar 5 cm y parar**. Eso borra el error acumulado de avanzar por tiempo. El sensor frontal se ignora durante los giros.
+Con el carro centrado en una celda (eje de las ruedas en el centro), el sensor frontal queda 16 cm adelante: 4 cm más allá del centro de la línea de enfrente (celda de 24 cm, media celda = 12 cm). Al avanzar hacia una pared, el sensor frontal pisa la línea cuando al eje le faltan ~4 cm para el centro: **al ver la línea, avanzar ~4 cm y parar** (el valor exacto se calibra). Eso borra el error acumulado de avanzar por tiempo. El sensor frontal se ignora durante los giros.
 
 ## 5. Laberinto físico
 
-- Celda de 22 cm entre centros de líneas, línea de 2 cm, margen blanco de 5 cm o más (DEC-02). Con 16 cm entre los sensores laterales quedan ~2 cm de blanco a cada lado.
+- **DEC-02: celda de 24 cm** entre centros de líneas, línea de 2 cm, margen blanco de 5 cm. Quedan 22 cm de blanco entre paredes: con 16 cm entre los sensores laterales hay **3 cm de tolerancia a cada lado** antes de pisar una línea, y 3.5 cm para las ruedas.
+- Tamaño: un laberinto de `c` columnas mide `24c + 2` cm de ancho. En un rollo de plotter de 91 cm caben 3 columnas (74 cm + margen); el largo no tiene límite. Con cinta o cartulina no hay límite.
 - `pc/imprimir.py` genera el PDF 1:1 para el plotter y un plano con medidas y lista de piezas para armarlo con cinta aislante o tiras de cartulina negra (DEC-03).
 - La tinta, la cinta o la cartulina tienen que ser **mate** y absorber IR: probarlas con los sensores (> 400) adentro y al sol.
 

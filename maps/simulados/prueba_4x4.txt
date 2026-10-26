@@ -1,6 +1,6 @@
 # Mapa de prueba de 4x4 (no es el mapa 1 de la demo).
-# A 22 cm por celda el laberinto mide 90 x 90 cm; con 5 cm de margen, la hoja es de 100 x 100 cm.
-# En un rollo de 91 cm: python -m pc.imprimir <mapa> --margen 0.5 y poner el impreso sobre una base blanca.
+# A 24 cm por celda mide 98 x 98 cm (108 x 108 con el margen): más ancho que un rollo de plotter de 91 cm,
+# así que este se arma con cinta o cartulina (python -m pc.imprimir da el plano).
 #
 #   +-+-+-+-+
 #   |     | |
