@@ -23,8 +23,9 @@ agente-laberinto/
 │   └── tests/            # corren solos con todos los algoritmos y todos los mapas
 ├── resultados/           # tablas de comparación para el informe
 ├── arduino/
-│   ├── agente/           # firmware del carro: recibe el mapa y planea a bordo
-│   │   └── src/planner/  #   lector del mapa y BFS en C++ (misma ruta que Python, lo verifican los tests)
+│   ├── agente/           # firmware del carro: recibe el mapa, planea a bordo y recorre la ruta
+│   │   ├── src/planner/  #   lector del mapa y BFS en C++ (misma ruta que Python, lo verifican los tests)
+│   │   └── src/imu/      #   giroscopio MPU6050: giros por ángulo y rumbo al avanzar
 │   ├── control_remoto/   # manejar el carro y ver los sensores desde el celular
 │   └── pruebas/          # sketches sueltos, uno por carpeta
 └── docs/                 # arquitectura, informe, fotos
@@ -84,7 +85,13 @@ Conectarse a la red Wi-Fi `agente-laberinto` (clave `laberinto2026`) con el carr
 python -m pc.enviar maps/simulados/ejemplo_5x5.txt
 ```
 
-El carro valida el mapa, lo guarda (sobrevive a un reinicio), calcula la ruta y la devuelve. `enviar.py` la compara con la de Python. Por cable: `--puerto COM6` (o `/dev/cu.usbserial-...` en el Mac; `pip install pyserial`).
+El carro valida el mapa, lo guarda (sobrevive a un reinicio), calcula la ruta y la devuelve. `enviar.py` la compara con la de Python. Por cable: `--puerto COM6` (o `/dev/cu.wchusbserial...` en el Mac; `pip install pyserial`).
+
+Para calibrar y correr la ruta: `python -m pc.consola` (por Wi-Fi) o `python -m pc.consola --puerto <puerto>` (por cable). Una línea vacía manda `STOP`. Los comandos están en `docs/ARQUITECTURA.md` (4.4) y el paso a paso en `docs/HANDOFF.md`.
+
+**Hotspot del celular (recomendado):** así el PC queda en la misma red que el carro sin perder internet. Se configura una vez con `RED_SSID <nombre>`, `RED_CLAVE <clave>` y `RED CONECTAR` (quedan en la memoria del carro, no en el código). El hotspot tiene que dar 2.4 GHz. El carro mantiene también su red propia de respaldo. `pc.enviar` y `pc.consola` encuentran el carro solos: la última IP conocida (`~/.agente-laberinto-ip`), la red propia o barriendo la subred del hotspot, porque el hotspot de Android no deja pasar mDNS ni broadcast.
+
+En el Mac, la terminal necesita el permiso de **Red local** (Ajustes → Privacidad y seguridad). Sin él, Python da `No route to host` aunque `ping` funcione.
 
 ### Imprimir o armar el laberinto
 
@@ -98,6 +105,8 @@ Genera en `build/impresion/`:
 
 La cinta o la cartulina tienen que ser **mate** y absorber IR: probarlas antes con los sensores (deben dar > 400).
 
+**La tinta del plotter no sirve:** es invisible al IR de los TCRT5000 (lee igual que el papel blanco, 26/10/2026). El impreso se usa como guía y las líneas se forran con cinta aislante (~1.9 cm, centrada sobre la línea de 2 cm), sin arrugas y pasándola ~1 cm en las esquinas.
+
 ### ESP32-S3
 
 Core `esp32:esp32` 3.3.x. Se programa por el USB-C marcado "COM" (chip CH343). Monitor Serial a 115200 baudios.
@@ -110,11 +119,13 @@ arduino-cli upload -p <puerto> --fqbn $FQBN arduino/<ruta>/<sketch>
 
 En el IDE: placa "ESP32S3 Dev Module", Flash Size 16MB, PSRAM "OPI PSRAM", Partition Scheme "16M Flash (3MB APP/9.9MB FATFS)". Después de la primera carga se puede flashear por Wi-Fi (OTA), ver `docs/ARQUITECTURA.md`.
 
+En el Mac con Apple Silicon, el `ctags` del core es x86: instalar Rosetta (`softwareupdate --install-rosetta`). Para el cable, el driver de WCH (`brew install --cask wch-ch34x-usb-serial-driver`) y aprobar la extensión en Ajustes.
+
 ### Sketches
 
 | Sketch | Para qué |
 |---|---|
-| `arduino/agente` | Firmware del carro: recibe el mapa y calcula la ruta. Comandos por TCP en 192.168.4.1:23 (falta ejecutar la ruta con los motores) |
+| `arduino/agente` | Firmware del carro: recibe el mapa, calcula la ruta y la recorre (`GO`). Comandos por TCP en 192.168.4.1:23 |
 | `arduino/control_remoto` | Manejar el carro desde el celular y ver los sensores. Página en http://192.168.4.1 |
 | `arduino/pruebas/diagnostico_esp32s3` | Lectura de los sensores por Serial |
 | `arduino/pruebas/prueba_motores_esp32s3` | Identificar motor izquierdo/derecho y sentido de giro |
@@ -131,6 +142,7 @@ En el IDE: placa "ESP32S3 Dev Module", Flash Size 16MB, PSRAM "OPI PSRAM", Parti
 | Llantas | 43 mm de diámetro, 19 mm de ancho, eje D de 3 mm (≈1.1 m/s a 500 RPM) |
 | Driver | L298N |
 | Sensores | 3x TCRT5000, salida analógica (AO). 16 cm entre las puntas de los laterales; el frontal a 16 cm del eje de las ruedas |
+| Giroscopio | MPU6050 (módulo GY-521) por I2C, plano con el chip hacia arriba, pegado con cinta doble faz de espuma |
 | Energía motores | 4xAA en serie (6V) al borne 12V del L298N |
 | Energía placa | Batería de 9V al jack DC del shield. **Nunca USB y batería al tiempo** |
 
@@ -146,9 +158,12 @@ Los pines están en `arduino/agente/src/config/pines_esp32s3.h`.
 | IN3 / IN4 | 17 / 18 |
 | Sensor izquierdo / centro / derecho (AO) | 4 / 5 / 6 |
 | Alimentación de los sensores | 3.3V (filas G/V/S del shield) |
+| Giroscopio SDA / SCL (VCC a 3.3V; AD0, XDA, XCL e INT sin conectar) | 9 / 10 |
+| LED RGB (WS2812) | 48 |
 
 - Jumpers ENA, ENB y 5V del L298N quitados.
-- El borne 5V del L298N se alimenta desde el 5V del shield.
+- El borne 5V del L298N se alimenta desde el 5V del shield. **Si ese cable se suelta, los motores no responden** (el L298N se queda sin lógica): con 4xAA su regulador interno no alcanza a dar 5V.
+- El LED RGB de esta placa clon no prende hasta cerrar con estaño el puente de soldadura marcado `RGB`. El LED rojo fijo es el de power y el verde que titila es el TX del CH343 (si titila sin parar, el ESP32 está en un bucle de brownout).
 - Tierra común entre L298N, placa y sensores.
 - Adelante = IN1=H/IN2=L (derecha) e IN3=H/IN4=L (izquierda), sin invertir motores.
 - No usar GPIO 35-37 (PSRAM), 0/3/45/46 (arranque), 19/20 (USB nativo) ni 43/44 (UART).
@@ -157,3 +172,5 @@ Los pines están en `arduino/agente/src/config/pines_esp32s3.h`.
 ## Calibración en el sitio
 
 Los tiempos de movimiento y los umbrales de los sensores dependen de las pilas, la tinta y la luz. Calibrar siempre en el sitio de la demo y con pilas nuevas.
+
+Los valores por defecto de `arduino/agente/src/config/parametros.h` son los que funcionaron el 26/10/2026 en el impreso de prueba (5 de 5 corridas en la meta, ~14 s). Los giros dependen del giroscopio y no de los tiempos, así que en otro sitio normalmente solo hay que recalibrar `umbral`, `t_celda` y `t_alinear` (paso a paso en `docs/HANDOFF.md`).

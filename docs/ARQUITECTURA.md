@@ -122,18 +122,19 @@ El Arduino IDE solo compila lo que está en la carpeta del sketch y en `src/` (d
 
 ```
 arduino/agente/
-├── agente.ino                  # Wi-Fi, OTA, consola (Serial y TCP) y comandos
+├── agente.ino                  # Wi-Fi, OTA, consola (Serial y TCP), comandos y ejecutor (máquina de estados)
 └── src/
     ├── config/
     │   ├── pines.h / pines_esp32s3.h
-    │   └── parametros.h        # valores por defecto (tiempos, PWM, umbral)
+    │   └── parametros.h        # valores por defecto (calibrados el 26/10/2026)
     ├── planner/                # sin Arduino.h: compila también en el PC
     │   ├── mapa.h/.cpp         # LectorMapa: valida la grilla línea por línea
     │   └── bfs.h/.cpp          # BFS sobre (fila, col, orientación), arreglos estáticos
-    ├── hal/                    # (por hacer) motores, sensores normalizados 0..1000
-    ├── movimiento.h/.cpp       # (por hacer) avanzar_celda(), girar(), con corrección
-    └── ejecutor.h/.cpp         # (por hacer) recorre la ruta, maneja estados y log
+    └── imu/
+        └── mpu6050.h/.cpp      # giroscopio por I2C, sin librerías: integra el rumbo (eje Z)
 ```
+
+El ejecutor es una máquina de estados sin `delay()` (STOP y OTA siguen funcionando mientras se mueve): `AVANZAR → BUSCAR_LINEA → ALINEAR`, `GIRAR → PULSO`, con `PAUSA` entre movimientos.
 
 ### 4.1 Pines
 
@@ -142,7 +143,8 @@ arduino/agente/
 | ENA / IN1 / IN2 (motor A = llanta derecha) | 7 / 15 / 16 |
 | ENB / IN3 / IN4 (motor B = llanta izquierda) | 8 / 17 / 18 |
 | Sensor izq / centro / der | 4 / 5 / 6 (ADC1), alimentados a 3.3V |
-| LED de estado | 48 (RGB) |
+| Giroscopio MPU6050 SDA / SCL | 9 / 10 (I2C a 400 kHz, dirección 0x68) |
+| LED de estado | 48 (RGB, WS2812; requiere el puente `RGB` soldado) |
 
 Adelante es IN1=H/IN2=L (derecha) e IN3=H/IN4=L (izquierda), sin invertir motores. No usar GPIO 35-37 (PSRAM), 0/3/45/46 (arranque), 19/20 (USB nativo) ni 43/44 (UART).
 
@@ -157,13 +159,15 @@ espota -i 192.168.4.1 -I <ip del PC> -p 3232 -a <clave OTA> -f build/agente/agen
 
 - `CDCOnBoot=default` porque se programa por el USB-C "COM" (UART). Con el USB nativo sería `cdc`.
 - `app3M_fat9M_16MB` aprovecha los 16 MB: 3 MB por app y dos slots para OTA.
-- `espota` está en `Arduino15/packages/esp32/hardware/esp32/<versión>/tools/`.
+- `espota` está en `Arduino15/packages/esp32/hardware/esp32/<versión>/tools/` (en el Mac, `python3 espota.py ...`).
+- `arduino-cli upload --protocol network` necesita encontrar el carro por mDNS; en la red del carro no siempre lo encuentra (`port not found`). En ese caso, `espota` directo.
+- Cuando el carro se reinicia tras el OTA, su red desaparece unos segundos y el computador puede pasarse solo a otra red Wi-Fi: hay que volver a conectarse a `agente-laberinto`.
 - **Firewall de Windows:** en el OTA, el ESP32 abre una conexión de vuelta hacia el PC. Windows la bloquea si `espota.exe` no tiene una regla de entrada **para el perfil de la red del carro**. Al primer intento aparece una ventana para permitirlo.
 - `control_remoto` y `agente` usan la misma red y el mismo puerto: en el carro va uno a la vez.
 
 ### 4.3 Sensores normalizados
 
-`sensores.leer()` devuelve valores de **0 a 1000**: `crudo * 1000 / 4095`, con la polaridad aplicada para que 1000 sea negro. Los umbrales se configuran en esa escala. Referencia (23/10/2026): blanco ~35-57, cinta aislante ~250-860, aire 1000.
+`sensores.leer()` devuelve valores de **0 a 1000**: `crudo * 1000 / 4095`, con la polaridad aplicada para que 1000 sea negro. Los umbrales se configuran en esa escala. Referencia (23/10/2026): blanco ~35-57, cinta aislante ~250-860, aire 1000. Referencia (26/10/2026, cinta sobre el impreso): blanco 24-85, cinta 400-690, la tinta del plotter igual que el blanco. Umbral 200.
 
 ### 4.4 Protocolo de comandos
 
@@ -175,11 +179,17 @@ Texto, una línea por comando, por `Serial` (115200) o por TCP en `192.168.4.1:2
 | `PLAN` | vuelve a calcular la ruta con el mapa guardado | ✅ |
 | `RUTA` | imprime la última ruta | ✅ |
 | `COSTO_GIRO <v>` | costo de L/R y vuelve a planear | ✅ |
-| `INFO` / `STOP` | estado / parar motores | ✅ |
-| `GO` | ejecuta la ruta | por hacer |
-| `PASO F` | ejecuta un solo movimiento (para calibrar) | por hacer |
-| `SET <param> <valor>` / `GET` / `SAVE` | `T_CELDA`, `T_GIRO`, `PWM`, `COMP_IZQ`, `COMP_DER`, `UMBRAL`, `KP` | por hacer |
-| `SENS` | lectura de los 3 sensores | por hacer |
+| `INFO` / `STOP` | estado (incluye `imu=ok/no` y la causa del último reinicio) / parar motores | ✅ |
+| `GO` | recorre la ruta desde la celda de inicio; calibra el giroscopio al arrancar (carro quieto) | ✅ probado el 26/10: 6 de 6 en la meta con la configuración final (~14 s) |
+| `PASO F [n]` / `PASO L` / `PASO R` / `PASO A` | un movimiento suelto, para calibrar (`A` = avanzar hasta la línea y alinearse) | ✅ probado |
+| `SET <param> <valor>` / `GET` / `SAVE` | parámetros de `src/config/parametros.h` | ✅ probado |
+| `SENS` / `SENS ON` / `SENS OFF` | lectura de los 3 sensores (`STOP` no apaga el modo continuo: `SENS OFF`) | ✅ probado |
+| `IMU` / `IMU ON` / `IMU OFF` / `IMU CAL` | rumbo del giroscopio / continuo / recalibrar el sesgo (carro quieto) | ✅ probado |
+| `RED_SSID <nombre>` / `RED_CLAVE <clave>` / `RED [CONECTAR\|BORRAR]` | hotspot al que se conecta además de su red propia (en Preferences) / estado e IP | ✅ probado con un S24 |
+
+Durante el `GO`, después de cada movimiento el log muestra `# rumbo=<grados> objetivo=<grados> pulsos=<n>`.
+
+Desde el PC, `python -m pc.consola` abre una consola TCP con el carro (una línea vacía manda `STOP`); con `--puerto <puerto>` va por cable. El orden de calibración está en `docs/HANDOFF.md`.
 
 Ejemplo:
 ```
@@ -201,7 +211,36 @@ Los parámetros se guardan en Preferences, así que **calibrar no implica recomp
 
 ### 4.5 Alinear con las paredes
 
-Con el carro centrado en una celda (eje de las ruedas en el centro), el sensor frontal queda 16 cm adelante: 4 cm más allá del centro de la línea de enfrente (celda de 24 cm, media celda = 12 cm). Al avanzar hacia una pared, el sensor frontal pisa la línea cuando al eje le faltan ~4 cm para el centro: **al ver la línea, avanzar ~4 cm y parar** (el valor exacto se calibra). Eso borra el error acumulado de avanzar por tiempo. El sensor frontal se ignora durante los giros.
+Con el carro centrado en una celda (eje de las ruedas en el centro), el sensor frontal queda 16 cm adelante: 4 cm más allá del centro de la línea de enfrente (celda de 24 cm, media celda = 12 cm). Al avanzar hacia una pared, el sensor frontal pisa la línea cuando al eje le faltan ~4 cm para el centro: **al ver la línea, avanzar ~4 cm y parar** (el valor exacto se calibra con `t_alinear`). Con la celda de 22 cm del impreso de prueba son ~6 cm. Eso borra el error acumulado de avanzar por tiempo. El sensor frontal se ignora durante los giros.
+
+- Lo que se mide es el **eje de las ruedas**: la punta del carro siempre queda ~5 cm más allá de la línea.
+- El frontal solo busca la línea en la **última celda** del tramo (antes cruzaría la línea de la celda de origen). Si no la ve en el tiempo del tramo, la sigue buscando una celda más (`# no vio la línea de enfrente` si tampoco).
+- En esa última celda el carro va a `pwm_aprox` (más lento que `pwm`): llega con menos impulso y frena más cerca, también en bajada.
+- **Freno:** el freno en corto del L298N (IN1=IN2=HIGH) es débil con 4xAA, porque la fuerza contraelectromotriz del motor apenas supera la caída de los transistores bipolares. Con `pwm_freno` > 0 frena con **contramarcha**: cada rueda al revés durante `t_freno` ms.
+
+### 4.6 Blindaje (el carro decide solo)
+
+El PC solo observa: si se cae la red a mitad de un `GO`, el carro sigue y termina el recorrido (probado el 27/10 apagando el Wi-Fi del PC).
+
+- **Log sin bloqueo:** al cliente TCP solo se escribe si el socket acepta sin esperar. `NetworkClient::write` reintenta 10 x 1 s y podía congelar el `loop()` con los motores andando.
+- **Una conexión nueva reemplaza a la vieja:** si el PC desapareció sin cerrar, la conexión muerta dura minutos y no dejaba volver a conectarse.
+- **Giroscopio en su propia tarea** (500 Hz, prioridad 3): nada del loop frena la integración del rumbo.
+- **Calibración verificada:** si la desviación de las muestras pasa de 25 (crudo), el carro se movió: el `GO` reintenta una vez y si no, `ERR` y no arranca. Quieto da ~2. Al prender reintenta 3 veces. *(La detección de movimiento todavía no se probó con el carro moviéndose.)*
+- **Giroscopio caído:** 25 lecturas I2C fallidas seguidas → `# ERR el giroscopio dejó de responder` y giros por tiempo.
+- **Timeout:** si en 90 s no llegó a la meta, `STOP` y `ERR`.
+- **Hotspot:** si no lo encuentra en 20 s deja de buscarlo (mientras busca, salta de canal y la red propia se vuelve inestable). `RED CONECTAR` reintenta.
+
+### 4.7 Giros con giroscopio
+
+Los giros por tiempo resultaron muy irregulares (±15-25°): dependen de las pilas, de la pendiente del piso y del roce de la rueda con la cinta. Con el MPU6050:
+
+- El rumbo se integra en cada `loop()` (eje Z, ±500 °/s, filtro de 44 Hz). El sesgo se mide con el carro quieto al prender y al empezar cada `GO`; la deriva medida fue ~0.2° en 48 s.
+- En el `GO` el objetivo es **absoluto** (0°, 90°, 180°… desde la salida): el error de un giro no se arrastra al siguiente.
+- El giro corta a `90° - giro_antic_r` (derecha) o `90° - giro_antic_l` (izquierda) y frena; la inercia lo lleva el resto.
+- Si al terminar el error pasa de `giro_tol`, da **pulsos** de `t_pulso` ms hacia el lado que falta (máximo 8). Los pulsos frenan sin contramarcha: con un pulso tan corto, la reversa deshace lo que giró.
+- Al avanzar, el giroscopio mantiene el rumbo: `kr` PWM por grado de desvío (máximo ±60). Los sensores laterales (`kp`) quedan de respaldo.
+- Protecciones: si el rumbo crece al revés del giro, para (`imu_signo` mal puesto); si no llega en 3 × `t_giro`, para. Si el giroscopio no responde al prender, los giros vuelven a ser por tiempo (`t_giro`).
+- Resultado (26/10/2026): giros a ±4° con 0-4 pulsos.
 
 ## 5. Laberinto físico
 
@@ -231,9 +270,12 @@ Con el carro centrado en una celda (eje de las ruedas en el centro), el sensor f
 
 | Riesgo | Mitigación |
 |---|---|
-| La tinta del plotter no absorbe IR | Probarla ya (LAB-03); plan B con cinta aislante o cartulina negra mate (`pc/imprimir.py` da el plano) |
+| La tinta del plotter no absorbe IR | **Pasó el 26/10:** el sensor la lee como papel blanco aunque se baje. Se forran las líneas con cinta aislante (plan B) |
+| El piso tiene pendiente | **Pasó el 26/10:** de bajada el carro llega con más impulso y se pasa de la pared; además se tuerce 4-6°. Se compensa con `pwm_aprox`, `t_alinear` y `kr`; recalibrar en el piso de la demo (`docs/HANDOFF.md`) |
+| La rueda roza la cinta al girar | Frena el giro de golpe: lo compensan los pulsos del giroscopio. Mejor arreglarlo mecánicamente |
+| El portapilas suelto | **Pasó el 26/10:** se cayó, cortó la corriente y torció el carro. Asegurarlo antes de cada sesión |
 | El sol satura los sensores | Bajar los sensores a 5-8 mm (hoy están a ~1.5 cm) y ponerles faldita; recalibrar el umbral en el sitio |
-| Los tiempos cambian con el voltaje de las pilas | Pilas nuevas; `SET T_CELDA` / `T_GIRO` en el sitio; alinear con las paredes (4.5) |
+| Los tiempos cambian con el voltaje de las pilas | Pilas nuevas; `SET t_celda` en el sitio; alinear con las paredes (4.5); los giros van por giroscopio (4.7) |
 | La ruta del carro no coincide con la de Python | `test_planner_cpp.py` lo revisa en cada PR; `pc.enviar` lo vuelve a comparar con el carro real |
 | El ESP32 se reinicia por los picos de los motores | Alimentación separada (9V al shield para la lógica, AA para los motores) + condensador |
 | La batería de 9V se agota rápido | **Pasó el 23/10:** con 7.67V en reposo, el ESP32 entró en bucle de brownout al prender el Wi-Fi. Medir antes de cada sesión (nueva ≈ 9.5V; cambiarla por debajo de ~8.5V). Potencia del Wi-Fi bajada a 8.5 dBm. Batería de repuesto en la demo |
