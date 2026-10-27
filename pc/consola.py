@@ -12,11 +12,10 @@ Salir con Ctrl+C (manda STOP antes de cerrar). Comandos: ver arduino/agente/agen
 """
 
 import argparse
-import socket
 import sys
 import threading
 
-from pc.enviar import IP_CARRO, PUERTO_TCP, ConexionSerial
+from pc.enviar import ConexionSerial, conectar_tcp
 
 
 def escuchar(leer_linea):
@@ -34,7 +33,7 @@ def escuchar(leer_linea):
 
 def main(argv=None):
     p = argparse.ArgumentParser(description="Consola del carro (TCP o cable).")
-    p.add_argument("--ip", default=IP_CARRO)
+    p.add_argument("--ip", help="dirección del carro (por defecto: su red propia o el hotspot)")
     p.add_argument("--puerto", help="puerto serie (COM6, /dev/cu.wchusbserial...) en vez de Wi-Fi")
     args = p.parse_args(argv)
 
@@ -43,7 +42,7 @@ def main(argv=None):
         escribir, cerrar = con.ser.write, con.cerrar
         leer_linea = con.ser.readline   # b"" en timeout: se ignora
     else:
-        sock = socket.create_connection((args.ip, PUERTO_TCP), timeout=5)
+        sock = conectar_tcp(args.ip)
         sock.settimeout(None)
         archivo = sock.makefile("rb")
         escribir, cerrar = sock.sendall, sock.close

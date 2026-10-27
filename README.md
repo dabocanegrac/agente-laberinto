@@ -89,6 +89,8 @@ El carro valida el mapa, lo guarda (sobrevive a un reinicio), calcula la ruta y 
 
 Para calibrar y correr la ruta: `python -m pc.consola` (por Wi-Fi) o `python -m pc.consola --puerto <puerto>` (por cable). Una línea vacía manda `STOP`. Los comandos están en `docs/ARQUITECTURA.md` (4.4) y el paso a paso en `docs/HANDOFF.md`.
 
+**Hotspot del celular (recomendado):** así el PC queda en la misma red que el carro sin perder internet. Se configura una vez con `RED_SSID <nombre>`, `RED_CLAVE <clave>` y `RED CONECTAR` (quedan en la memoria del carro, no en el código). El hotspot tiene que dar 2.4 GHz. El carro mantiene también su red propia de respaldo. `pc.enviar` y `pc.consola` encuentran el carro solos: la última IP conocida (`~/.agente-laberinto-ip`), la red propia o barriendo la subred del hotspot, porque el hotspot de Android no deja pasar mDNS ni broadcast.
+
 En el Mac, la terminal necesita el permiso de **Red local** (Ajustes → Privacidad y seguridad). Sin él, Python da `No route to host` aunque `ping` funcione.
 
 ### Imprimir o armar el laberinto

@@ -13,7 +13,7 @@ Si usas Claude Code allá, pídele que lea este archivo, el `README.md` y `docs/
   - **La tinta del plotter es invisible al IR:** las líneas se forraron con cinta aislante.
 - **Firmware `arduino/agente` (rama `firmware/ejecutor`, PR #5):**
   - Recibe el mapa, planea con BFS a bordo y recorre la ruta con `GO`.
-  - Giros por **giroscopio** (MPU6050) con corrección por pulsos, rumbo mantenido al avanzar, freno con contramarcha y aproximación lenta a las paredes (ver `docs/ARQUITECTURA.md`, 4.5 y 4.6).
+  - Giros por **giroscopio** (MPU6050) con corrección por pulsos, rumbo mantenido al avanzar, freno con contramarcha y aproximación lenta a las paredes (ver `docs/ARQUITECTURA.md`, 4.5 a 4.7).
   - Los valores por defecto de `src/config/parametros.h` son los calibrados ese día.
 - **El hardware:** pines, alimentación, sensores y giroscopio están en el README.
   - Batería de 9 V al jack y 4xAA a los motores. **Nunca conectar USB y batería al tiempo.**
@@ -65,6 +65,15 @@ Si usas Claude Code allá, pídele que lea este archivo, el `README.md` y `docs/
 - En Windows salía como COM6. En Mac hace falta el driver de WCH (`brew install --cask wch-ch34x-usb-serial-driver` y aprobar la extensión en Ajustes) y sale como `/dev/cu.wchusbserial...`.
 - Mientras esté el cable, la 9 V va desconectada. Las 4xAA pueden quedar puestas (solo alimentan los motores).
 - `arduino-cli upload -p /dev/cu.wchusbserial... --fqbn <FQBN> --input-dir build/agente arduino/agente`
+
+## Conectarse por el hotspot del celular (recomendado)
+
+Así el PC tiene internet y el carro a la vez (probado el 27/10 con un S24 Ultra, sin Ethernet).
+
+1. En el celular: hotspot con **2.4 GHz** (o "2.4 y 5 GHz"). En Samsung, desactivar "apagar cuando no hay dispositivos". En iPhone, "Maximizar compatibilidad".
+2. Una sola vez, conectado a la red propia del carro (`agente-laberinto`) o por cable, en la consola: `RED_SSID <nombre>`, `RED_CLAVE <clave>`, `RED CONECTAR`. `RED` muestra la IP. Quedan guardados en el carro, que se reconecta solo al prender.
+3. Conectar el PC al hotspot. `pc.enviar` y `pc.consola` encuentran el carro solos (la primera vez barre la subred, ~5-8 s; después recuerda la IP).
+4. OTA por el hotspot: `python3 espota.py -i <ip del carro> -I <ip del PC en el hotspot> -p 3232 -a laberinto2026 -f build/agente/agente.ino.bin -r`.
 
 ## Correr la ruta
 

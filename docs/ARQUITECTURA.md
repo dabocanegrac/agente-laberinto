@@ -185,6 +185,7 @@ Texto, una línea por comando, por `Serial` (115200) o por TCP en `192.168.4.1:2
 | `SET <param> <valor>` / `GET` / `SAVE` | parámetros de `src/config/parametros.h` | ✅ probado |
 | `SENS` / `SENS ON` / `SENS OFF` | lectura de los 3 sensores (`STOP` no apaga el modo continuo: `SENS OFF`) | ✅ probado |
 | `IMU` / `IMU ON` / `IMU OFF` / `IMU CAL` | rumbo del giroscopio / continuo / recalibrar el sesgo (carro quieto) | ✅ probado |
+| `RED_SSID <nombre>` / `RED_CLAVE <clave>` / `RED [CONECTAR\|BORRAR]` | hotspot al que se conecta además de su red propia (en Preferences) / estado e IP | ✅ probado con un S24 |
 
 Durante el `GO`, después de cada movimiento el log muestra `# rumbo=<grados> objetivo=<grados> pulsos=<n>`.
 
@@ -217,7 +218,19 @@ Con el carro centrado en una celda (eje de las ruedas en el centro), el sensor f
 - En esa última celda el carro va a `pwm_aprox` (más lento que `pwm`): llega con menos impulso y frena más cerca, también en bajada.
 - **Freno:** el freno en corto del L298N (IN1=IN2=HIGH) es débil con 4xAA, porque la fuerza contraelectromotriz del motor apenas supera la caída de los transistores bipolares. Con `pwm_freno` > 0 frena con **contramarcha**: cada rueda al revés durante `t_freno` ms.
 
-### 4.6 Giros con giroscopio
+### 4.6 Blindaje (el carro decide solo)
+
+El PC solo observa: si se cae la red a mitad de un `GO`, el carro sigue y termina el recorrido (probado el 27/10 apagando el Wi-Fi del PC).
+
+- **Log sin bloqueo:** al cliente TCP solo se escribe si el socket acepta sin esperar. `NetworkClient::write` reintenta 10 x 1 s y podía congelar el `loop()` con los motores andando.
+- **Una conexión nueva reemplaza a la vieja:** si el PC desapareció sin cerrar, la conexión muerta dura minutos y no dejaba volver a conectarse.
+- **Giroscopio en su propia tarea** (500 Hz, prioridad 3): nada del loop frena la integración del rumbo.
+- **Calibración verificada:** si la desviación de las muestras pasa de 25 (crudo), el carro se movió: el `GO` reintenta una vez y si no, `ERR` y no arranca. Quieto da ~2. Al prender reintenta 3 veces. *(La detección de movimiento todavía no se probó con el carro moviéndose.)*
+- **Giroscopio caído:** 25 lecturas I2C fallidas seguidas → `# ERR el giroscopio dejó de responder` y giros por tiempo.
+- **Timeout:** si en 90 s no llegó a la meta, `STOP` y `ERR`.
+- **Hotspot:** si no lo encuentra en 20 s deja de buscarlo (mientras busca, salta de canal y la red propia se vuelve inestable). `RED CONECTAR` reintenta.
+
+### 4.7 Giros con giroscopio
 
 Los giros por tiempo resultaron muy irregulares (±15-25°): dependen de las pilas, de la pendiente del piso y del roce de la rueda con la cinta. Con el MPU6050:
 
@@ -262,7 +275,7 @@ Los giros por tiempo resultaron muy irregulares (±15-25°): dependen de las pil
 | La rueda roza la cinta al girar | Frena el giro de golpe: lo compensan los pulsos del giroscopio. Mejor arreglarlo mecánicamente |
 | El portapilas suelto | **Pasó el 26/10:** se cayó, cortó la corriente y torció el carro. Asegurarlo antes de cada sesión |
 | El sol satura los sensores | Bajar los sensores a 5-8 mm (hoy están a ~1.5 cm) y ponerles faldita; recalibrar el umbral en el sitio |
-| Los tiempos cambian con el voltaje de las pilas | Pilas nuevas; `SET t_celda` en el sitio; alinear con las paredes (4.5); los giros van por giroscopio (4.6) |
+| Los tiempos cambian con el voltaje de las pilas | Pilas nuevas; `SET t_celda` en el sitio; alinear con las paredes (4.5); los giros van por giroscopio (4.7) |
 | La ruta del carro no coincide con la de Python | `test_planner_cpp.py` lo revisa en cada PR; `pc.enviar` lo vuelve a comparar con el carro real |
 | El ESP32 se reinicia por los picos de los motores | Alimentación separada (9V al shield para la lógica, AA para los motores) + condensador |
 | La batería de 9V se agota rápido | **Pasó el 23/10:** con 7.67V en reposo, el ESP32 entró en bucle de brownout al prender el Wi-Fi. Medir antes de cada sesión (nueva ≈ 9.5V; cambiarla por debajo de ~8.5V). Potencia del Wi-Fi bajada a 8.5 dBm. Batería de repuesto en la demo |

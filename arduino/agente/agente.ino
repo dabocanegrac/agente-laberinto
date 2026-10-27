@@ -13,6 +13,8 @@
 //   SET <p> <v>       cambia un parámetro (ver src/config/parametros.h); GET los muestra; SAVE los guarda
 //   SENS              lectura de los 3 sensores (0-1000, > umbral = negro); SENS ON / SENS OFF continuo
 //   IMU               rumbo del giroscopio; IMU ON / IMU OFF continuo; IMU CAL lo calibra (carro quieto)
+//   RED_SSID <nombre> / RED_CLAVE <clave>   hotspot al que se conecta además de su red propia
+//   RED               estado del hotspot e IP; RED CONECTAR (re)conecta; RED BORRAR lo olvida
 //   INFO              estado
 //   STOP              para los motores (también corta un GO)
 // Respuestas: "OK ...", "ERR ...", "RUTA F F L ..."; el log empieza con '#'.
@@ -33,12 +35,17 @@
 #include <ArduinoOTA.h>
 #include <Preferences.h>
 #include <esp_system.h>
+#include <lwip/sockets.h>
 
 #include "src/config/pines.h"
 #include "src/config/parametros.h"
 #include "src/planner/bfs.h"
 #include "src/imu/mpu6050.h"
 
+// Red propia del carro (siempre prendida, de respaldo). Además se conecta al hotspot guardado con
+// RED_SSID / RED_CLAVE (en Preferences, no en el código: el repo es público); así el PC queda en la misma
+// red que el carro sin perder internet. El hotspot del celular filtra mDNS y broadcast: pc/enviar.py
+// encuentra el carro barriendo la subred (y recuerda la última IP).
 const char* WIFI_SSID = "agente-laberinto";
 const char* WIFI_PASS = "laberinto2026";
 const char* OTA_PASS  = "laberinto2026";
@@ -48,6 +55,8 @@ WiFiServer servidorTcp(23);
 WiFiClient cliente;
 Preferences prefs;
 esp_reset_reason_t razonReset;
+char redSsid[33] = "";
+char redClave[65] = "";
 
 planner::LectorMapa lector;
 planner::Mapa mapa;
@@ -70,15 +79,31 @@ void ledEstado() {
   else led(0, 0, 40);
 }
 
+// Manda al cliente TCP solo si el socket lo acepta sin esperar; si no, la línea se pierde.
+// cliente.println puede bloquear el loop hasta 10 s (NetworkClient::write reintenta 10 x 1 s) si el PC
+// se fue de la red, y eso con los motores andando saca al carro del laberinto.
+void enviarSinBloquear(const char* s, size_t n) {
+  int fd = cliente.fd();
+  if (fd < 0) return;
+  fd_set set;
+  FD_ZERO(&set);
+  FD_SET(fd, &set);
+  timeval cero = {0, 0};
+  if (select(fd + 1, nullptr, &set, nullptr, &cero) > 0) send(fd, s, n, MSG_DONTWAIT);
+}
+
 // Log que va a la vez por Serial y al cliente TCP (lo que pasa durante un GO).
 void logf(const char* fmt, ...) {
   char buf[128];
   va_list ap;
   va_start(ap, fmt);
-  vsnprintf(buf, sizeof(buf), fmt, ap);
+  int n = vsnprintf(buf, sizeof(buf) - 2, fmt, ap);
   va_end(ap);
+  n = constrain(n, 0, (int)sizeof(buf) - 3);
   Serial.println(buf);
-  if (cliente && cliente.connected()) cliente.println(buf);
+  buf[n++] = '\r';
+  buf[n++] = '\n';
+  if (cliente && cliente.connected()) enviarSinBloquear(buf, n);
 }
 
 // ---------- motores ----------
@@ -258,7 +283,13 @@ void avanzarCorrigiendo() {
   ruedas(der, izq);
 }
 
+const unsigned long T_MAX_GO = 90000;   // si en 90 s no llegó, algo salió mal: parar
+
 void atenderEjecutor() {
+  if (ej.enRuta && millis() - ej.tGo > T_MAX_GO) {
+    detener("ERR GO: pasaron 90 s sin llegar a la meta");
+    return;
+  }
   switch (ej.fase) {
     case QUIETO:
       return;
@@ -423,6 +454,63 @@ void cargarMapa() {
   costoGiro = prefs.getFloat("costo_giro", costoGiro);
 }
 
+// ---------- hotspot ----------
+
+// Mientras busca el hotspot, el ESP32 salta de canal y la red propia se vuelve inestable: si no lo
+// encuentra en T_BUSCAR_RED, deja de buscar y queda solo la red propia (RED CONECTAR reintenta).
+const unsigned long T_BUSCAR_RED = 20000;
+bool buscandoRed = false;
+unsigned long tBuscarRed = 0;
+
+void conectarRed() {
+  WiFi.disconnect(false, false);   // solo la conexión al hotspot: la red propia sigue
+  buscandoRed = redSsid[0] != '\0';
+  tBuscarRed = millis();
+  if (buscandoRed) WiFi.begin(redSsid, redClave);
+}
+
+void atenderRed() {
+  static bool enHotspot = false;
+  if ((WiFi.status() == WL_CONNECTED) != enHotspot) {
+    enHotspot = !enHotspot;
+    if (enHotspot) {
+      buscandoRed = false;
+      logf("# conectado a %s: %s", redSsid, WiFi.localIP().toString().c_str());
+    } else {
+      buscandoRed = true;   // autoReconnect lo busca; si no vuelve, se deja de buscar
+      tBuscarRed = millis();
+      logf("# se perdió el hotspot %s: sigue la red propia", redSsid);
+    }
+  }
+  if (buscandoRed && millis() - tBuscarRed > T_BUSCAR_RED) {
+    buscandoRed = false;
+    WiFi.disconnect(false, false);
+    logf("# no encontré el hotspot %s: solo la red propia (RED CONECTAR para reintentar)", redSsid);
+  }
+}
+
+void imprimirRed(Stream& s) {
+  s.printf("OK red=%s", redSsid[0] ? redSsid : "(ninguna)");
+  if (WiFi.status() == WL_CONNECTED) s.printf(" ip=%s", WiFi.localIP().toString().c_str());
+  else s.print(redSsid[0] ? " desconectado" : "");
+  s.printf(" propia=%s\n", WiFi.softAPIP().toString().c_str());
+}
+
+// El resto de la línea después del comando (el nombre del hotspot puede tener espacios).
+const char* resto(const char* linea) {
+  while (*linea == ' ') linea++;
+  while (*linea && *linea != ' ') linea++;
+  while (*linea == ' ') linea++;
+  return linea;
+}
+
+// Calibra el giroscopio; si el carro se movió (alguien lo estaba acomodando), espera y lo intenta otra vez.
+bool calibrarQuieto() {
+  if (imu::calibrar()) return true;
+  delay(300);
+  return imu::calibrar();
+}
+
 // ---------- consola: el mismo protocolo por Serial y por TCP ----------
 
 struct Consola {
@@ -470,12 +558,32 @@ void Consola::procesar(char* l) {
     return;
   }
 
+  char original[sizeof(linea)];
+  strlcpy(original, l, sizeof(original));
   char* cmd = strtok(l, " ");
   if (!cmd) return;
   char* arg = strtok(nullptr, " ");
   for (char* p = cmd; *p; p++) *p = toupper(*p);
 
-  if (strcmp(cmd, "MAPA") == 0) {
+  if (strcmp(cmd, "RED_SSID") == 0 || strcmp(cmd, "RED_CLAVE") == 0) {
+    bool esSsid = cmd[4] == 'S';
+    strlcpy(esSsid ? redSsid : redClave, resto(original), esSsid ? sizeof(redSsid) : sizeof(redClave));
+    prefs.putString(esSsid ? "red_ssid" : "red_clave", esSsid ? redSsid : redClave);
+    s->printf("OK %s guardado (RED CONECTAR para conectarse)\n", esSsid ? "nombre" : "clave");
+  } else if (strcmp(cmd, "RED") == 0) {
+    if (arg && strcasecmp(arg, "CONECTAR") == 0) {
+      conectarRed();
+      s->println(redSsid[0] ? "OK conectando (RED para ver la IP)" : "ERR falta RED_SSID");
+    } else if (arg && strcasecmp(arg, "BORRAR") == 0) {
+      redSsid[0] = redClave[0] = '\0';
+      prefs.remove("red_ssid");
+      prefs.remove("red_clave");
+      conectarRed();
+      s->println("OK hotspot borrado: solo la red propia");
+    } else {
+      imprimirRed(*s);
+    }
+  } else if (strcmp(cmd, "MAPA") == 0) {
     if (ej.moviendo()) detener("# mapa nuevo: parado");
     lector.empezar();
     recibiendoMapa = true;
@@ -497,9 +605,12 @@ void Consola::procesar(char* l) {
       s->println("ERR no hay ruta (mandar el mapa primero)");
     } else if (ej.moviendo()) {
       s->println("ERR ya se está moviendo (STOP primero)");
+    } else if (imu::ok() && !calibrarQuieto()) {
+      // rumbo 0 = orientación de inicio: si alguien lo estaba tocando, el sesgo sale mal y el carro se tuerce
+      s->printf("ERR el carro se movió al calibrar el giroscopio (ruido=%.0f): dejarlo quieto y GO otra vez\n",
+                imu::ruidoCal());
     } else {
-      s->printf("OK GO %d acciones\n", ruta.n);
-      imu::calibrar();   // el carro está quieto en la salida: rumbo 0 = orientación de inicio
+      s->printf("OK GO %d acciones%s\n", ruta.n, imu::ok() ? "" : " (sin giroscopio: giros por tiempo)");
       ej.rumboObj = 0;
       ej.enRuta = true;
       ej.idx = 0;
@@ -551,8 +662,8 @@ void Consola::procesar(char* l) {
       if (ej.moviendo()) {
         s->println("ERR se está moviendo (STOP primero)");
       } else {
-        imu::calibrar();
-        s->printf("OK imu calibrado: sesgo=%.1f rumbo=0\n", imu::sesgo());
+        if (imu::calibrar()) s->printf("OK imu calibrado: sesgo=%.1f ruido=%.1f rumbo=0\n", imu::sesgo(), imu::ruidoCal());
+        else s->printf("ERR el carro se movió al calibrar (ruido=%.0f): sigue el sesgo anterior\n", imu::ruidoCal());
       }
     } else if (arg) {
       imuContinuo = strcasecmp(arg, "ON") == 0;
@@ -564,9 +675,10 @@ void Consola::procesar(char* l) {
   } else if (strcmp(cmd, "INFO") == 0) {
     if (hayMapa) s->printf("OK mapa=%dx%d", mapa.filas, mapa.cols);
     else s->print("OK mapa=ninguno");
-    s->printf(" ruta=%d costo_giro=%g fase=%s imu=%s reset=%s uptime=%lus clientes_wifi=%d\n",
+    s->printf(" ruta=%d costo_giro=%g fase=%s imu=%s reset=%s uptime=%lus clientes_wifi=%d hotspot=%s\n",
               hayRuta ? ruta.n : 0, costoGiro, NOMBRE_FASE[ej.fase], imu::ok() ? "ok" : "no",
-              nombreRazon(razonReset), millis() / 1000, WiFi.softAPgetStationNum());
+              nombreRazon(razonReset), millis() / 1000, WiFi.softAPgetStationNum(),
+              WiFi.status() == WL_CONNECTED ? WiFi.localIP().toString().c_str() : "no");
   } else {
     s->printf("ERR comando desconocido: %s\n", cmd);
   }
@@ -574,18 +686,20 @@ void Consola::procesar(char* l) {
 
 Consola consolaSerial, consolaTcp;
 
+// Una conexión nueva reemplaza a la anterior: si el PC se fue de la red sin cerrar, el carro no se entera
+// (la conexión muerta puede durar minutos) y sin esto no se podría volver a conectar.
 void atenderTcp() {
-  if (!cliente || !cliente.connected()) {
+  if (cliente && !cliente.connected()) cliente.stop();
+  WiFiClient nuevo = servidorTcp.accept();
+  if (nuevo) {
     if (cliente) cliente.stop();
-    WiFiClient nuevo = servidorTcp.accept();
-    if (nuevo) {
-      cliente = nuevo;
-      consolaTcp = Consola();
-      consolaTcp.s = &cliente;
-      cliente.printf("# agente-laberinto. reset=%s. Comandos: MAPA ... FIN, PLAN, RUTA, COSTO_GIRO <v>, GO, "
-                     "PASO F|L|R|A, SET <p> <v>, GET, SAVE, SENS [ON|OFF], IMU [ON|OFF|CAL], INFO, STOP\n",
-                     nombreRazon(razonReset));
-    }
+    cliente = nuevo;
+    consolaTcp = Consola();
+    consolaTcp.s = &cliente;
+    cliente.printf("# agente-laberinto. reset=%s. Comandos: MAPA ... FIN, PLAN, RUTA, COSTO_GIRO <v>, GO, "
+                   "PASO F|L|R|A, SET <p> <v>, GET, SAVE, SENS [ON|OFF], IMU [ON|OFF|CAL], "
+                   "RED [CONECTAR|BORRAR], RED_SSID <nombre>, RED_CLAVE <clave>, INFO, STOP\n",
+                   nombreRazon(razonReset));
   }
   if (cliente && cliente.connected()) consolaTcp.leer();
 }
@@ -600,15 +714,23 @@ void setup() {
   razonReset = esp_reset_reason();
 
   analogReadResolution(12);
-  if (imu::iniciar(PIN_IMU_SDA, PIN_IMU_SCL)) imu::calibrar();   // al prender, el carro debería estar quieto
-
   prefs.begin("agente", false);
   cargarParametros();
+  // Al prender, el giroscopio tarda en estabilizarse y la primera calibración suele salir ruidosa:
+  // reintentar. Si igual no queda, el GO vuelve a calibrar.
+  if (imu::iniciar(PIN_IMU_SDA, PIN_IMU_SCL, &par.imu_signo)) {
+    for (int i = 0; i < 3 && !imu::calibrar(); i++) delay(500);
+  }
   cargarMapa();
   if (hayMapa) hayRuta = planner::bfs(mapa, costoGiro, ruta);
   ledEstado();
 
+  WiFi.mode(WIFI_AP_STA);
   WiFi.softAP(WIFI_SSID, WIFI_PASS);
+  WiFi.setAutoReconnect(true);
+  strlcpy(redSsid, prefs.getString("red_ssid", "").c_str(), sizeof(redSsid));
+  strlcpy(redClave, prefs.getString("red_clave", "").c_str(), sizeof(redClave));
+  conectarRed();
   // Menos potencia = picos de corriente más bajos (evita brownouts con la batería de 9V).
   WiFi.setTxPower(WIFI_POWER_8_5dBm);
 
@@ -627,8 +749,9 @@ void loop() {
   ArduinoOTA.handle();
   atenderTcp();
   consolaSerial.leer();
-  imu::actualizar(par.imu_signo);
   atenderEjecutor();
+  if (imu::seCayo()) logf("# ERR el giroscopio dejó de responder (¿cable suelto?): giros por tiempo");
+  atenderRed();
 
   if ((sensContinuo || imuContinuo) && millis() - ultimoSens >= 200) {
     ultimoSens = millis();
