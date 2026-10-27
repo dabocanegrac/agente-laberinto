@@ -1,6 +1,7 @@
-"""Consola para hablar con el carro por Wi-Fi (red agente-laberinto): calibrar, GO, STOP.
+"""Consola para hablar con el carro por Wi-Fi (red agente-laberinto) o por cable: calibrar, GO, STOP.
 
     python -m pc.consola
+    python -m pc.consola --puerto /dev/cu.wchusbserial...      # por cable (pip install pyserial)
     > SENS
     > PASO F
     > SET t_celda 750
@@ -15,32 +16,47 @@ import socket
 import sys
 import threading
 
-from pc.enviar import IP_CARRO, PUERTO_TCP
+from pc.enviar import IP_CARRO, PUERTO_TCP, ConexionSerial
 
 
-def escuchar(sock):
-    archivo = sock.makefile("rb")
-    for linea in archivo:
-        print(linea.decode(errors="replace").rstrip())
+def escuchar(leer_linea):
+    try:
+        while True:
+            linea = leer_linea()
+            if linea is None:
+                break
+            if linea:
+                print(linea.decode(errors="replace").rstrip())
+    except OSError:
+        pass
     print("(el carro cerró la conexión)")
 
 
 def main(argv=None):
-    p = argparse.ArgumentParser(description="Consola TCP del carro.")
+    p = argparse.ArgumentParser(description="Consola del carro (TCP o cable).")
     p.add_argument("--ip", default=IP_CARRO)
+    p.add_argument("--puerto", help="puerto serie (COM6, /dev/cu.wchusbserial...) en vez de Wi-Fi")
     args = p.parse_args(argv)
 
-    sock = socket.create_connection((args.ip, PUERTO_TCP), timeout=5)
-    sock.settimeout(None)
-    threading.Thread(target=escuchar, args=(sock,), daemon=True).start()
+    if args.puerto:
+        con = ConexionSerial(args.puerto, timeout=0.2)
+        escribir, cerrar = con.ser.write, con.cerrar
+        leer_linea = con.ser.readline   # b"" en timeout: se ignora
+    else:
+        sock = socket.create_connection((args.ip, PUERTO_TCP), timeout=5)
+        sock.settimeout(None)
+        archivo = sock.makefile("rb")
+        escribir, cerrar = sock.sendall, sock.close
+        leer_linea = lambda: archivo.readline() or None
+    threading.Thread(target=escuchar, args=(leer_linea,), daemon=True).start()
     try:
         while True:
             linea = input().strip() or "STOP"
-            sock.sendall(linea.encode() + b"\n")
+            escribir(linea.encode() + b"\n")
     except (KeyboardInterrupt, EOFError):
-        sock.sendall(b"STOP\n")
+        escribir(b"STOP\n")
     finally:
-        sock.close()
+        cerrar()
     return 0
 
 

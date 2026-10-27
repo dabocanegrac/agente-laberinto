@@ -21,3 +21,7 @@ const uint8_t PIN_SENSOR_DER = 6;
 const int ADC_MAX = 4095;
 
 const uint8_t PIN_LED = 48;  // RGB (WS2812)
+
+// Giroscopio MPU6050 (GY-521) por I2C, alimentado a 3.3V. AD0, XDA, XCL e INT sin conectar.
+const uint8_t PIN_IMU_SDA = 9;
+const uint8_t PIN_IMU_SCL = 10;

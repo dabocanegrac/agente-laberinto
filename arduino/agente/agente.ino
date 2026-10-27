@@ -12,6 +12,7 @@
 //   PASO A            avanza hasta ver una línea con el frontal y se alinea (para calibrar t_alinear)
 //   SET <p> <v>       cambia un parámetro (ver src/config/parametros.h); GET los muestra; SAVE los guarda
 //   SENS              lectura de los 3 sensores (0-1000, > umbral = negro); SENS ON / SENS OFF continuo
+//   IMU               rumbo del giroscopio; IMU ON / IMU OFF continuo; IMU CAL lo calibra (carro quieto)
 //   INFO              estado
 //   STOP              para los motores (también corta un GO)
 // Respuestas: "OK ...", "ERR ...", "RUTA F F L ..."; el log empieza con '#'.
@@ -20,7 +21,9 @@
 // Cómo recorre la ruta: junta las F seguidas y avanza n * t_celda, corrigiendo con los sensores laterales
 // (si uno pisa una línea, le quita kp a la rueda del otro lado). Si el mapa dice que al final hay pared,
 // avanza hasta que el frontal ve esa línea y sigue t_alinear ms: eso borra el error acumulado.
-// Los giros son por tiempo y durante ellos se ignoran los sensores.
+// Con giroscopio (MPU6050): los giros cortan a 90° - giro_antic_r / giro_antic_l del rumbo objetivo (múltiplos de 90° desde
+// el inicio del GO, así el error no se acumula) y al avanzar se corrige el rumbo con kr. Sin giroscopio, los
+// giros son por tiempo (t_giro). Durante los giros se ignoran los sensores de línea.
 //
 // OTA: espota / Arduino IDE, hostname "agente-laberinto".
 // LED RGB: azul = sin mapa, verde = ruta lista, blanco = moviéndose, rojo = último reinicio por brownout.
@@ -34,6 +37,7 @@
 #include "src/config/pines.h"
 #include "src/config/parametros.h"
 #include "src/planner/bfs.h"
+#include "src/imu/mpu6050.h"
 
 const char* WIFI_SSID = "agente-laberinto";
 const char* WIFI_PASS = "laberinto2026";
@@ -94,14 +98,26 @@ void motor(uint8_t en, uint8_t inAd, uint8_t inAt, int pwm) {
   analogWrite(en, constrain(abs(pwm), 0, 255));
 }
 
+int ultDer = 0, ultIzq = 0;   // último PWM pedido, para saber hacia dónde frenar
+
 // PWM con signo: positivo = adelante.
 void ruedas(int der, int izq) {
+  ultDer = der;
+  ultIzq = izq;
   motor(PIN_DER_EN, PIN_DER_AD, PIN_DER_AT, der);
   motor(PIN_IZQ_EN, PIN_IZQ_AD, PIN_IZQ_AT, izq);
 }
 
-// Freno activo del L298N: las dos entradas en HIGH cortocircuitan el motor.
+int signo(int v) { return (v > 0) - (v < 0); }
+
+// Con pwm_freno > 0: contramarcha (cada rueda al revés de como iba), que para casi en seco.
+// Si no, freno activo del L298N: las dos entradas en HIGH cortocircuitan el motor.
 void frenar() {
+  if (par.pwm_freno > 0) {
+    motor(PIN_DER_EN, PIN_DER_AD, PIN_DER_AT, -signo(ultDer) * par.pwm_freno);
+    motor(PIN_IZQ_EN, PIN_IZQ_AD, PIN_IZQ_AT, -signo(ultIzq) * par.pwm_freno);
+    return;
+  }
   digitalWrite(PIN_DER_AD, HIGH);
   digitalWrite(PIN_DER_AT, HIGH);
   digitalWrite(PIN_IZQ_AD, HIGH);
@@ -123,8 +139,9 @@ bool negro(int v) { return v > par.umbral; }
 
 // ---------- ejecutor: máquina de estados sin delay (STOP y OTA siguen funcionando) ----------
 
-enum Fase { QUIETO, AVANZAR, BUSCAR_LINEA, ALINEAR, GIRAR, PAUSA };
-const char* NOMBRE_FASE[] = {"QUIETO", "AVANZAR", "BUSCAR_LINEA", "ALINEAR", "GIRAR", "PAUSA"};
+enum Fase { QUIETO, AVANZAR, BUSCAR_LINEA, ALINEAR, GIRAR, PULSO, PAUSA };
+const char* NOMBRE_FASE[] = {"QUIETO", "AVANZAR", "BUSCAR_LINEA", "ALINEAR", "GIRAR", "PULSO", "PAUSA"};
+const int MAX_PULSOS = 8;
 
 struct Ejecutor {
   Fase fase = QUIETO;
@@ -135,6 +152,10 @@ struct Ejecutor {
   planner::Estado pose;        // dónde cree el mapa que está el carro
   int celdas = 0;              // F del grupo actual
   bool alinear = false;        // al final del grupo hay pared: buscar la línea con el frontal
+  int dirGiro = 0;             // +1 derecha, -1 izquierda (giro en curso)
+  bool ajustarGiro = false;    // el último movimiento fue un giro: corregir con pulsos si quedó mal
+  int pulsos = 0;              // pulsos de corrección del giro actual
+  float rumboObj = 0;          // rumbo que debería tener (giroscopio), en grados
   unsigned long tGo = 0;
 
   unsigned long transcurrido() const { return millis() - t0; }
@@ -154,12 +175,20 @@ void terminarMovimiento() {
 void empezarAvance(int n, bool alinear) {
   ej.celdas = n;
   ej.alinear = alinear;
+  ej.ajustarGiro = false;
+  ej.pulsos = 0;
+  if (!ej.enRuta) ej.rumboObj = imu::rumbo();   // PASO: mantener el rumbo con el que arranca
   ej.entrar(AVANZAR, (unsigned long)n * par.t_celda);
   led(20, 20, 20);
 }
 
 // d = +1 derecha (horario), -1 izquierda.
 void empezarGiro(int d) {
+  ej.dirGiro = d;
+  ej.ajustarGiro = true;
+  ej.pulsos = 0;
+  // En el GO el objetivo es absoluto (múltiplos de 90° desde el inicio); en un PASO, 90° desde donde está.
+  ej.rumboObj = (ej.enRuta ? ej.rumboObj : imu::rumbo()) + d * 90;
   ruedas(-d * par.pwm_giro, d * par.pwm_giro);
   ej.entrar(GIRAR, par.t_giro);
   led(20, 20, 20);
@@ -207,10 +236,23 @@ void siguienteAccion() {
   }
 }
 
-// Avanza derecho corrigiendo con los laterales.
+// Ya está en la última celda antes de una pared (o buscándola): ir a pwm_aprox para frenar más cerca.
+bool aproximando() {
+  return ej.fase == BUSCAR_LINEA || ej.fase == ALINEAR ||
+         (ej.alinear && ej.transcurrido() >= (unsigned long)max(0, ej.celdas - 1) * par.t_celda);
+}
+
+// Avanza derecho corrigiendo el rumbo con el giroscopio y la posición con los laterales.
 void avanzarCorrigiendo() {
   Lectura l = leerSensores();
-  int der = par.pwm + par.comp, izq = par.pwm - par.comp;
+  int base = aproximando() ? par.pwm_aprox : par.pwm;
+  int der = base + par.comp, izq = base - par.comp;
+  if (imu::ok() && par.kr > 0) {
+    // desvio > 0: se torció a la derecha, así que la rueda derecha va más rápido para volver.
+    int c = constrain((int)(par.kr * (imu::rumbo() - ej.rumboObj)), -60, 60);
+    der += c;
+    izq -= c;
+  }
   if (negro(l.izq) && !negro(l.der)) der -= par.kp;        // se fue a la izquierda: girar a la derecha
   else if (negro(l.der) && !negro(l.izq)) izq -= par.kp;   // se fue a la derecha: girar a la izquierda
   ruedas(der, izq);
@@ -253,11 +295,42 @@ void atenderEjecutor() {
       avanzarCorrigiendo();
       return;
     case GIRAR:
-      if (ej.transcurrido() >= ej.dur) terminarMovimiento();
+      if (!imu::ok()) {
+        if (ej.transcurrido() >= ej.dur) terminarMovimiento();
+      } else if ((ej.rumboObj - imu::rumbo()) * ej.dirGiro <=
+                 (ej.dirGiro > 0 ? par.giro_antic_r : par.giro_antic_l)) {
+        terminarMovimiento();
+      } else if ((ej.rumboObj - imu::rumbo()) * ej.dirGiro > 110) {
+        // falta cada vez más en vez de menos: el giroscopio cuenta al revés
+        detener("ERR el rumbo va al revés del giro: SET imu_signo -1 (o 1) y SAVE");
+      } else if (ej.transcurrido() >= 3 * ej.dur) {
+        logf("# el giroscopio no llegó a los 90° en 3 x t_giro: para");
+        terminarMovimiento();
+      }
+      return;
+    case PULSO:
+      // Sin contramarcha: con un pulso tan corto, la reversa deshace lo que giró.
+      if (ej.transcurrido() >= ej.dur) {
+        ruedas(0, 0);
+        ej.entrar(PAUSA, par.pausa);
+      }
       return;
     case PAUSA:
       if (ej.transcurrido() >= (unsigned long)par.t_freno) parar();
-      if (ej.transcurrido() >= ej.dur) siguienteAccion();
+      if (ej.transcurrido() >= ej.dur) {
+        if (imu::ok() && ej.ajustarGiro) {
+          float falta = ej.rumboObj - imu::rumbo();   // > 0: falta girar a la derecha
+          if (fabsf(falta) > par.giro_tol && ej.pulsos < MAX_PULSOS) {
+            int d = falta > 0 ? 1 : -1;
+            ej.pulsos++;
+            ruedas(-d * par.pwm_giro, d * par.pwm_giro);
+            ej.entrar(PULSO, par.t_pulso);
+            return;
+          }
+        }
+        if (imu::ok()) logf("# rumbo=%.1f objetivo=%.0f pulsos=%d", imu::rumbo(), ej.rumboObj, ej.pulsos);
+        siguienteAccion();
+      }
       return;
   }
 }
@@ -289,6 +362,7 @@ bool cambiarParametro(const char* nombre, int valor) {
 }
 
 bool sensContinuo = false;
+bool imuContinuo = false;
 unsigned long ultimoSens = 0;
 
 const char* nombreRazon(esp_reset_reason_t r) {
@@ -425,6 +499,8 @@ void Consola::procesar(char* l) {
       s->println("ERR ya se está moviendo (STOP primero)");
     } else {
       s->printf("OK GO %d acciones\n", ruta.n);
+      imu::calibrar();   // el carro está quieto en la salida: rumbo 0 = orientación de inicio
+      ej.rumboObj = 0;
       ej.enRuta = true;
       ej.idx = 0;
       ej.pose = mapa.inicio;
@@ -467,12 +543,30 @@ void Consola::procesar(char* l) {
       s->printf("OK izq=%d cen=%d der=%d  (umbral=%d)%s%s%s\n", l.izq, l.cen, l.der, par.umbral,
                 negro(l.izq) ? " IZQ" : "", negro(l.cen) ? " CEN" : "", negro(l.der) ? " DER" : "");
     }
+  } else if (strcmp(cmd, "IMU") == 0) {
+    if (!imu::ok()) {
+      s->printf("ERR el giroscopio no responde (SDA=%d SCL=%d, VCC, GND); los giros van por tiempo\n",
+                PIN_IMU_SDA, PIN_IMU_SCL);
+    } else if (arg && strcasecmp(arg, "CAL") == 0) {
+      if (ej.moviendo()) {
+        s->println("ERR se está moviendo (STOP primero)");
+      } else {
+        imu::calibrar();
+        s->printf("OK imu calibrado: sesgo=%.1f rumbo=0\n", imu::sesgo());
+      }
+    } else if (arg) {
+      imuContinuo = strcasecmp(arg, "ON") == 0;
+      s->printf("OK imu %s\n", imuContinuo ? "on" : "off");
+    } else {
+      s->printf("OK rumbo=%.1f sesgo=%.1f whoami=0x%02X imu_signo=%d\n", imu::rumbo(), imu::sesgo(),
+                imu::quienSoy(), par.imu_signo);
+    }
   } else if (strcmp(cmd, "INFO") == 0) {
     if (hayMapa) s->printf("OK mapa=%dx%d", mapa.filas, mapa.cols);
     else s->print("OK mapa=ninguno");
-    s->printf(" ruta=%d costo_giro=%g fase=%s reset=%s uptime=%lus clientes_wifi=%d\n", hayRuta ? ruta.n : 0,
-              costoGiro, NOMBRE_FASE[ej.fase], nombreRazon(razonReset), millis() / 1000,
-              WiFi.softAPgetStationNum());
+    s->printf(" ruta=%d costo_giro=%g fase=%s imu=%s reset=%s uptime=%lus clientes_wifi=%d\n",
+              hayRuta ? ruta.n : 0, costoGiro, NOMBRE_FASE[ej.fase], imu::ok() ? "ok" : "no",
+              nombreRazon(razonReset), millis() / 1000, WiFi.softAPgetStationNum());
   } else {
     s->printf("ERR comando desconocido: %s\n", cmd);
   }
@@ -489,7 +583,7 @@ void atenderTcp() {
       consolaTcp = Consola();
       consolaTcp.s = &cliente;
       cliente.printf("# agente-laberinto. reset=%s. Comandos: MAPA ... FIN, PLAN, RUTA, COSTO_GIRO <v>, GO, "
-                     "PASO F|L|R|A, SET <p> <v>, GET, SAVE, SENS [ON|OFF], INFO, STOP\n",
+                     "PASO F|L|R|A, SET <p> <v>, GET, SAVE, SENS [ON|OFF], IMU [ON|OFF|CAL], INFO, STOP\n",
                      nombreRazon(razonReset));
     }
   }
@@ -506,6 +600,7 @@ void setup() {
   razonReset = esp_reset_reason();
 
   analogReadResolution(12);
+  if (imu::iniciar(PIN_IMU_SDA, PIN_IMU_SCL)) imu::calibrar();   // al prender, el carro debería estar quieto
 
   prefs.begin("agente", false);
   cargarParametros();
@@ -524,19 +619,23 @@ void setup() {
   servidorTcp.begin();
 
   consolaSerial.s = &Serial;
-  Serial.printf("# agente listo en %s:23  reset=%s  mapa=%s\n", WiFi.softAPIP().toString().c_str(),
-                nombreRazon(razonReset), hayMapa ? "guardado" : "ninguno");
+  Serial.printf("# agente listo en %s:23  reset=%s  mapa=%s  imu=%s\n", WiFi.softAPIP().toString().c_str(),
+                nombreRazon(razonReset), hayMapa ? "guardado" : "ninguno", imu::ok() ? "ok" : "no");
 }
 
 void loop() {
   ArduinoOTA.handle();
   atenderTcp();
   consolaSerial.leer();
+  imu::actualizar(par.imu_signo);
   atenderEjecutor();
 
-  if (sensContinuo && millis() - ultimoSens >= 200) {
+  if ((sensContinuo || imuContinuo) && millis() - ultimoSens >= 200) {
     ultimoSens = millis();
-    Lectura l = leerSensores();
-    logf("izq=%d cen=%d der=%d", l.izq, l.cen, l.der);
+    if (sensContinuo) {
+      Lectura l = leerSensores();
+      logf("izq=%d cen=%d der=%d", l.izq, l.cen, l.der);
+    }
+    if (imuContinuo) logf("rumbo=%.1f", imu::rumbo());
   }
 }
