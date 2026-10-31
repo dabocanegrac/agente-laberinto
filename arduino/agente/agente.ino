@@ -8,6 +8,8 @@
 //   RUTA              imprime la última ruta
 //   COSTO_GIRO <v>    costo de L/R relativo a F (por defecto 0.5) y vuelve a planear
 //   GO                recorre la ruta. El carro arranca con el eje en el centro de la celda de inicio
+//   VOLVER            después de llegar a la meta, planea (BFS) y recorre el camino a la salida y queda
+//                     mirando como arrancó, listo para otro GO
 //   PASO F [n]        avanza n celdas (por tiempo); PASO L / PASO R gira 90°;
 //   PASO A            avanza hasta ver una línea con el frontal y se alinea (para calibrar t_alinear)
 //   SET <p> <v>       cambia un parámetro (ver src/config/parametros.h); GET los muestra; SAVE los guarda
@@ -23,8 +25,9 @@
 // Cómo recorre la ruta: junta las F seguidas y avanza n * t_celda, corrigiendo con los sensores laterales
 // (si uno pisa una línea, le quita kp a la rueda del otro lado). Si el mapa dice que al final hay pared,
 // avanza hasta que el frontal ve esa línea y sigue t_alinear ms: eso borra el error acumulado.
-// Con giroscopio (MPU6050): los giros cortan a 90° - giro_antic_r / giro_antic_l del rumbo objetivo (múltiplos de 90° desde
-// el inicio del GO, así el error no se acumula) y al avanzar se corrige el rumbo con kr. Sin giroscopio, los
+// Con giroscopio (MPU6050): los giros van a velocidad controlada (giro_vel, que baja a giro_vel_min al final) y
+// cortan a 90° - giro_antic_r / giro_antic_l del rumbo objetivo (múltiplos de 90° desde el inicio del GO, así el
+// error no se acumula) y al avanzar se corrige el rumbo con kr. Sin giroscopio, los
 // giros son por tiempo (t_giro). Durante los giros se ignoran los sensores de línea.
 //
 // OTA: espota / Arduino IDE, hostname "agente-laberinto".
@@ -61,6 +64,8 @@ char redClave[65] = "";
 planner::LectorMapa lector;
 planner::Mapa mapa;
 planner::Ruta ruta;
+planner::Ruta rutaVuelta;   // de la meta a la salida (VOLVER)
+bool enMeta = false;        // el último GO llegó a la meta: el carro sabe dónde está
 bool hayMapa = false;
 bool hayRuta = false;
 float costoGiro = 0.5f;
@@ -173,6 +178,8 @@ struct Ejecutor {
   unsigned long t0 = 0;        // inicio de la fase
   unsigned long dur = 0;       // duración de la fase (en BUSCAR_LINEA, tiempo máximo)
   bool enRuta = false;         // GO (sigue con la próxima acción) o PASO (para al terminar)
+  bool volviendo = false;      // la ruta en curso es la vuelta a la salida
+  const planner::Ruta* recorrido = &ruta;   // ruta en curso: la del GO o la de VOLVER
   int idx = 0;                 // próxima acción de la ruta
   planner::Estado pose;        // dónde cree el mapa que está el carro
   int celdas = 0;              // F del grupo actual
@@ -180,7 +187,12 @@ struct Ejecutor {
   int dirGiro = 0;             // +1 derecha, -1 izquierda (giro en curso)
   bool ajustarGiro = false;    // el último movimiento fue un giro: corregir con pulsos si quedó mal
   int pulsos = 0;              // pulsos de corrección del giro actual
+  int tPulso = 0;              // duración del próximo pulso: crece si el anterior no movió el carro
+  float rumboAntes = 0;        // rumbo al empezar el giro o el último pulso
+  bool forzado = false;        // el giro iba trabado y se subió a PWM 255
   float rumboObj = 0;          // rumbo que debería tener (giroscopio), en grados
+  int paredesEsperadas = 0;    // tramos del recorrido que terminan contra una pared
+  int paredesVistas = 0;       // de esos, en cuántos el frontal vio la línea
   unsigned long tGo = 0;
 
   unsigned long transcurrido() const { return millis() - t0; }
@@ -208,10 +220,35 @@ void empezarAvance(int n, bool alinear) {
 }
 
 // d = +1 derecha (horario), -1 izquierda.
+// Control de velocidad del giro (con giroscopio): integral del PI, último PWM y cuándo se actualizó.
+float giroI = 0;
+int giroPwm = 0;
+unsigned long giroTCtrl = 0;
+
+void controlarVelocidadGiro() {
+  unsigned long ahora = millis();
+  if (ahora - giroTCtrl < 10) return;
+  float dt = (ahora - giroTCtrl) * 1e-3f;
+  giroTCtrl = ahora;
+  float falta = (ej.rumboObj - imu::rumbo()) * ej.dirGiro;
+  float vObj = falta >= par.giro_lento
+                   ? par.giro_vel
+                   : par.giro_vel_min + (par.giro_vel - par.giro_vel_min) * max(falta, 0.0f) / par.giro_lento;
+  float err = vObj - imu::velocidad() * ej.dirGiro;
+  giroI = constrain(giroI + par.ki_giro * err * dt, 0.0f, 255.0f);
+  giroPwm = constrain((int)(giroI + par.kp_giro * err / 10), -255, 255);   // negativo: frena en reversa
+  ruedas(-ej.dirGiro * giroPwm, ej.dirGiro * giroPwm);
+}
+
 void empezarGiro(int d) {
+  giroI = giroPwm = par.pwm_giro;
+  giroTCtrl = millis();
   ej.dirGiro = d;
   ej.ajustarGiro = true;
   ej.pulsos = 0;
+  ej.tPulso = par.t_pulso;
+  ej.forzado = false;
+  ej.rumboAntes = imu::rumbo();
   // En el GO el objetivo es absoluto (múltiplos de 90° desde el inicio); en un PASO, 90° desde donde está.
   ej.rumboObj = (ej.enRuta ? ej.rumboObj : imu::rumbo()) + d * 90;
   ruedas(-d * par.pwm_giro, d * par.pwm_giro);
@@ -233,16 +270,20 @@ void siguienteAccion() {
     detener("OK fin paso");
     return;
   }
-  if (ej.idx >= ruta.n) {
+  const planner::Ruta& r = *ej.recorrido;
+  if (ej.idx >= r.n) {
+    bool volvio = ej.volviendo;
     detener(nullptr);
-    logf("OK META en %.1f s", (millis() - ej.tGo) / 1000.0f);
+    enMeta = !volvio;
+    logf(volvio ? "OK SALIDA en %.1f s (paredes %d/%d)" : "OK META en %.1f s (paredes %d/%d)",
+         (millis() - ej.tGo) / 1000.0f, ej.paredesVistas, ej.paredesEsperadas);
     return;
   }
   static const int8_t DF[] = {-1, 0, 1, 0}, DC[] = {0, 1, 0, -1};
-  char a = ruta.movimientos[ej.idx];
+  char a = r.movimientos[ej.idx];
   if (a == 'F') {
     int n = 0;
-    while (ej.idx < ruta.n && ruta.movimientos[ej.idx] == 'F') {
+    while (ej.idx < r.n && r.movimientos[ej.idx] == 'F') {
       ej.idx++;
       n++;
     }
@@ -251,6 +292,7 @@ void siguienteAccion() {
     bool pared = mapa.hay_pared(ej.pose.fila, ej.pose.col, ej.pose.ori);
     logf("# F x%d -> (%d,%d,%c)%s", n, ej.pose.fila, ej.pose.col, planner::LETRA_ORI[ej.pose.ori],
          pared ? " alinear con la pared" : "");
+    if (pared) ej.paredesEsperadas++;
     empezarAvance(n, pared);
   } else {
     ej.idx++;
@@ -280,6 +322,13 @@ void avanzarCorrigiendo() {
   }
   if (negro(l.izq) && !negro(l.der)) der -= par.kp;        // se fue a la izquierda: girar a la derecha
   else if (negro(l.der) && !negro(l.izq)) izq -= par.kp;   // se fue a la derecha: girar a la izquierda
+  // Con pwm_aprox y las dos correcciones, una rueda puede quedar bajo la zona muerta de los N20 y pararse
+  // (el carro se arrastra y no llega a la pared): subir las dos lo mismo, sin cambiar la diferencia.
+  int falta = par.pwm_min - min(der, izq);
+  if (falta > 0) {
+    der += falta;
+    izq += falta;
+  }
   ruedas(der, izq);
 }
 
@@ -298,9 +347,10 @@ void atenderEjecutor() {
         // A partir de la última celda, el frontal puede ver la línea de enfrente.
         if (ej.transcurrido() >= (unsigned long)max(0, ej.celdas - 1) * par.t_celda &&
             negro(leerSensores().cen)) {
+          ej.paredesVistas++;
           ej.entrar(ALINEAR, par.t_alinear);
         } else if (ej.transcurrido() >= ej.dur) {
-          ej.entrar(BUSCAR_LINEA, par.t_celda);   // se quedó corto: buscarla hasta una celda más
+          ej.entrar(BUSCAR_LINEA, par.t_buscar);   // se quedó corto (va a pwm_aprox): un poco más
         }
       } else if (ej.transcurrido() >= ej.dur) {
         terminarMovimiento();
@@ -310,8 +360,17 @@ void atenderEjecutor() {
       return;
     case BUSCAR_LINEA:
       if (negro(leerSensores().cen)) {
+        ej.paredesVistas++;
         ej.entrar(ALINEAR, par.t_alinear);
       } else if (ej.transcurrido() >= ej.dur) {
+        // El mapa dice que hay pared y no la vio: o la cinta falla o el carro no está donde cree.
+        if (ej.enRuta && par.perdido) {
+          char msg[96];
+          snprintf(msg, sizeof(msg), "ERR no vi la pared al llegar a (%d,%d,%c): el carro puede estar perdido",
+                   ej.pose.fila, ej.pose.col, planner::LETRA_ORI[ej.pose.ori]);
+          detener(msg);
+          return;
+        }
         logf("# no vio la línea de enfrente: sigue por tiempo");
         terminarMovimiento();
         return;
@@ -330,13 +389,26 @@ void atenderEjecutor() {
         if (ej.transcurrido() >= ej.dur) terminarMovimiento();
       } else if ((ej.rumboObj - imu::rumbo()) * ej.dirGiro <=
                  (ej.dirGiro > 0 ? par.giro_antic_r : par.giro_antic_l)) {
-        terminarMovimiento();
-      } else if ((ej.rumboObj - imu::rumbo()) * ej.dirGiro > 110) {
-        // falta cada vez más en vez de menos: el giroscopio cuenta al revés
+        float falta = (ej.rumboObj - imu::rumbo()) * ej.dirGiro;
+        unsigned long dur = ej.transcurrido();
+        terminarMovimiento();   // primero frenar: el log puede demorar
+        logf("# corte giro: falta=%.1f vel=%.0f pwm=%d dur=%lums", falta, imu::velocidad() * ej.dirGiro, giroPwm, dur);
+      } else if ((imu::rumbo() - ej.rumboAntes) * ej.dirGiro < -15) {
+        // gira, pero para el otro lado: el giroscopio cuenta al revés
         detener("ERR el rumbo va al revés del giro: SET imu_signo -1 (o 1) y SAVE");
       } else if (ej.transcurrido() >= 3 * ej.dur) {
-        logf("# el giroscopio no llegó a los 90° en 3 x t_giro: para");
-        terminarMovimiento();
+        if ((imu::rumbo() - ej.rumboAntes) * ej.dirGiro < 20) {
+          detener("ERR no logra girar (¿algo lo traba?)");   // ni a PWM 255: no tiene sentido seguir
+        } else {
+          logf("# el giro no llegó a los 90° en 3 x t_giro: lo terminan los pulsos");
+          terminarMovimiento();
+        }
+      } else if (!ej.forzado && ej.transcurrido() >= ej.dur && (imu::rumbo() - ej.rumboAntes) * ej.dirGiro < 20) {
+        ej.forzado = true;   // casi no se ha movido: una rueda roza o le falta fuerza
+        ruedas(-ej.dirGiro * 255, ej.dirGiro * 255);
+        logf("# giro trabado: sube a PWM 255");
+      } else if (!ej.forzado) {
+        controlarVelocidadGiro();
       }
       return;
     case PULSO:
@@ -352,10 +424,13 @@ void atenderEjecutor() {
         if (imu::ok() && ej.ajustarGiro) {
           float falta = ej.rumboObj - imu::rumbo();   // > 0: falta girar a la derecha
           if (fabsf(falta) > par.giro_tol && ej.pulsos < MAX_PULSOS) {
+            // si el pulso anterior casi no lo movió (roce, una rueda más floja), el siguiente es más largo
+            if (ej.pulsos > 0 && fabsf(imu::rumbo() - ej.rumboAntes) < 1.0f) ej.tPulso = min(ej.tPulso + 40, 250);
             int d = falta > 0 ? 1 : -1;
             ej.pulsos++;
+            ej.rumboAntes = imu::rumbo();
             ruedas(-d * par.pwm_giro, d * par.pwm_giro);
-            ej.entrar(PULSO, par.t_pulso);
+            ej.entrar(PULSO, ej.tPulso);
             return;
           }
         }
@@ -511,6 +586,51 @@ bool calibrarQuieto() {
   return imu::calibrar();
 }
 
+// La vuelta: BFS desde donde quedó el carro (la meta, con la orientación con que llegó) hasta la celda de
+// salida, y al final los giros que falten para quedar mirando como arrancó el GO.
+bool planearVuelta() {
+  planner::Mapa m = mapa;
+  m.inicio = ej.pose;
+  m.meta_fila = mapa.inicio.fila;
+  m.meta_col = mapa.inicio.col;
+  if (!planner::bfs(m, costoGiro, rutaVuelta)) return false;
+  uint8_t ori = ej.pose.ori;
+  for (int i = 0; i < rutaVuelta.n; i++) {
+    if (rutaVuelta.movimientos[i] == 'R') ori = (ori + 1) % 4;
+    if (rutaVuelta.movimientos[i] == 'L') ori = (ori + 3) % 4;
+  }
+  int falta = (mapa.inicio.ori - ori + 4) % 4;   // 1 = R, 2 = R R, 3 = L
+  const char* giros = falta == 1 ? "R" : falta == 2 ? "RR" : falta == 3 ? "L" : "";
+  for (const char* g = giros; *g && rutaVuelta.n < planner::MAX_MOVIMIENTOS; g++) rutaVuelta.movimientos[rutaVuelta.n++] = *g;
+  return true;
+}
+
+// Arranca el GO o la vuelta. Calibra el giroscopio: rumbo 0 = orientación actual del carro.
+void recorrer(Stream& s, const char* nombre, const planner::Ruta& r, planner::Estado desde, bool volviendo) {
+  if (imu::ok() && !calibrarQuieto()) {
+    // si alguien lo estaba tocando, el sesgo sale mal y el carro se tuerce todo el recorrido
+    s.printf("ERR el carro se movió al calibrar el giroscopio (ruido=%.0f): dejarlo quieto y %s otra vez\n",
+             imu::ruidoCal(), nombre);
+    return;
+  }
+  s.printf("OK %s %d acciones%s\n", nombre, r.n, imu::ok() ? "" : " (sin giroscopio: giros por tiempo)");
+  if (volviendo) {
+    s.print("RUTA");
+    for (int i = 0; i < r.n; i++) s.printf(" %c", r.movimientos[i]);
+    s.println();
+  }
+  enMeta = false;
+  ej.recorrido = &r;
+  ej.volviendo = volviendo;
+  ej.rumboObj = 0;
+  ej.paredesEsperadas = ej.paredesVistas = 0;
+  ej.enRuta = true;
+  ej.idx = 0;
+  ej.pose = desde;
+  ej.tGo = millis();
+  siguienteAccion();
+}
+
 // ---------- consola: el mismo protocolo por Serial y por TCP ----------
 
 struct Consola {
@@ -585,6 +705,7 @@ void Consola::procesar(char* l) {
     }
   } else if (strcmp(cmd, "MAPA") == 0) {
     if (ej.moviendo()) detener("# mapa nuevo: parado");
+    enMeta = false;
     lector.empezar();
     recibiendoMapa = true;
     errorMapa = false;
@@ -605,20 +726,21 @@ void Consola::procesar(char* l) {
       s->println("ERR no hay ruta (mandar el mapa primero)");
     } else if (ej.moviendo()) {
       s->println("ERR ya se está moviendo (STOP primero)");
-    } else if (imu::ok() && !calibrarQuieto()) {
-      // rumbo 0 = orientación de inicio: si alguien lo estaba tocando, el sesgo sale mal y el carro se tuerce
-      s->printf("ERR el carro se movió al calibrar el giroscopio (ruido=%.0f): dejarlo quieto y GO otra vez\n",
-                imu::ruidoCal());
     } else {
-      s->printf("OK GO %d acciones%s\n", ruta.n, imu::ok() ? "" : " (sin giroscopio: giros por tiempo)");
-      ej.rumboObj = 0;
-      ej.enRuta = true;
-      ej.idx = 0;
-      ej.pose = mapa.inicio;
-      ej.tGo = millis();
-      siguienteAccion();
+      recorrer(*s, "GO", ruta, mapa.inicio, false);
+    }
+  } else if (strcmp(cmd, "VOLVER") == 0) {
+    if (ej.moviendo()) {
+      s->println("ERR ya se está moviendo (STOP primero)");
+    } else if (!hayMapa || !enMeta) {
+      s->println("ERR VOLVER es después de un GO que llegó a la meta (si no, poner el carro en la salida a mano)");
+    } else if (!planearVuelta()) {
+      s->println("ERR no hay camino de la meta a la salida");
+    } else {
+      recorrer(*s, "VOLVER", rutaVuelta, ej.pose, true);
     }
   } else if (strcmp(cmd, "PASO") == 0 && arg) {
+    enMeta = false;   // movido a mano: ya no sabe con certeza dónde está
     char a = toupper(arg[0]);
     char* n = strtok(nullptr, " ");
     if (ej.moviendo()) {
@@ -665,6 +787,8 @@ void Consola::procesar(char* l) {
         if (imu::calibrar()) s->printf("OK imu calibrado: sesgo=%.1f ruido=%.1f rumbo=0\n", imu::sesgo(), imu::ruidoCal());
         else s->printf("ERR el carro se movió al calibrar (ruido=%.0f): sigue el sesgo anterior\n", imu::ruidoCal());
       }
+    } else if (arg && strcasecmp(arg, "DIAG") == 0) {
+      imu::diagnostico(*s);
     } else if (arg) {
       imuContinuo = strcasecmp(arg, "ON") == 0;
       s->printf("OK imu %s\n", imuContinuo ? "on" : "off");
@@ -697,7 +821,7 @@ void atenderTcp() {
     consolaTcp = Consola();
     consolaTcp.s = &cliente;
     cliente.printf("# agente-laberinto. reset=%s. Comandos: MAPA ... FIN, PLAN, RUTA, COSTO_GIRO <v>, GO, "
-                   "PASO F|L|R|A, SET <p> <v>, GET, SAVE, SENS [ON|OFF], IMU [ON|OFF|CAL], "
+                   "VOLVER, PASO F|L|R|A, SET <p> <v>, GET, SAVE, SENS [ON|OFF], IMU [ON|OFF|CAL|DIAG], "
                    "RED [CONECTAR|BORRAR], RED_SSID <nombre>, RED_CLAVE <clave>, INFO, STOP\n",
                    nombreRazon(razonReset));
   }
@@ -751,6 +875,10 @@ void loop() {
   consolaSerial.leer();
   atenderEjecutor();
   if (imu::seCayo()) logf("# ERR el giroscopio dejó de responder (¿cable suelto?): giros por tiempo");
+  uint8_t pwr;
+  if (imu::seReinicio(pwr))
+    logf("# ERR el giroscopio se reinició (PWR_MGMT_1=0x%02X, ¿caída de voltaje?) en fase=%s der=%d izq=%d: reconfigurado",
+         pwr, NOMBRE_FASE[ej.fase], ultDer, ultIzq);
   atenderRed();
 
   if ((sensContinuo || imuContinuo) && millis() - ultimoSens >= 200) {
