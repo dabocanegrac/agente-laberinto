@@ -16,12 +16,13 @@ agente-laberinto/
 ├── pc/                   # Python: referencia de los algoritmos, herramientas y tests
 │   ├── mapa.py           # leer y validar el mapa (grilla de 0/1)
 │   ├── modelo.py         # estado (fila, col, orientación), acciones F/L/R y costos
-│   ├── planners/         # un archivo por algoritmo (bfs.py, ...)
+│   ├── planners/         # un archivo por algoritmo (bfs.py, astar.py, ...)
 │   ├── planear.py        # python -m pc.planear <mapa> --algo <nombre|all>
+│   ├── comparar.py       # python -m pc.comparar: todos los algoritmos en todos los mapas → resultados/
 │   ├── enviar.py         # python -m pc.enviar <mapa>: manda el mapa al carro
 │   ├── imprimir.py       # python -m pc.imprimir <mapa>: PDF para el plotter o para armarlo
 │   └── tests/            # corren solos con todos los algoritmos y todos los mapas
-├── resultados/           # tablas de comparación para el informe
+├── resultados/           # tablas de comparación para el informe (comparacion.csv)
 ├── arduino/
 │   ├── agente/           # firmware del carro: recibe el mapa, planea a bordo y recorre la ruta
 │   │   ├── src/planner/  #   lector del mapa y BFS en C++ (misma ruta que Python, lo verifican los tests)
@@ -72,6 +73,7 @@ Desde la raíz del repo:
 pip install pytest ziglang reportlab
 python -m pc.planear maps/simulados/ejemplo_5x5.txt              # ruta de BFS
 python -m pc.planear maps/simulados/ejemplo_5x5.txt --algo all   # tabla con todos los algoritmos
+python -m pc.comparar                                            # todos los algoritmos en todos los mapas → resultados/comparacion.csv
 python -m pytest                                                 # tests
 ```
 

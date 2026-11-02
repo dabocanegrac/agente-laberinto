@@ -81,7 +81,9 @@ El estado de búsqueda es **`(fila, col, orientación)`**, no solo la celda. Las
 
 Así la comparación del informe muestra diferencias reales que se pueden cronometrar con el carro.
 
-Heurística para A\*: distancia Manhattan, más 1 giro si la meta no queda en la dirección actual. Es admisible.
+Heurística para A\* (`pc/planners/astar.py`): distancia Manhattan, más 1 giro (`COSTO_GIRO`) si la meta no queda al frente, en línea recta en la dirección actual. Es admisible y consistente (lo verifica `test_comparar.py` en todos los estados de todos los mapas).
+
+`python -m pc.comparar` corre todos los algoritmos en todos los mapas y deja `resultados/comparacion.csv` con acciones, giros, costo, nodos expandidos y tiempo (mediana de 5 corridas) para el informe.
 
 ## 3. Python (PC): referencia y herramientas
 
@@ -106,6 +108,7 @@ Agregar un algoritmo es crear un archivo en `pc/planners/` con un `@registrar cl
 
 ```
 python -m pc.planear maps/fisicos/mapa1.txt --algo all     # tabla comparativa
+python -m pc.comparar                                      # todos los algoritmos en todos los mapas → resultados/comparacion.csv
 python -m pc.enviar maps/fisicos/mapa1.txt                 # manda el mapa al carro (o --puerto COM6)
 python -m pc.imprimir maps/fisicos/mapa1.txt               # PDF para el plotter y plano para armarlo
 ```
