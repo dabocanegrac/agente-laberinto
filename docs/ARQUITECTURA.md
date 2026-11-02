@@ -15,7 +15,7 @@ Objetivos del diseño:
   maps/*.txt ──► enviar.py ──Wi-Fi──►  COMANDOS     (MAPA ... FIN, PLAN, GO, SET ...)
   (Python: referencia,                     │  mapa
    simulador, comparación)                 ▼
-                                       PLANIFICADOR (BFS a bordo; misma ruta que Python)
+                                       PLANIFICADOR (BFS o A* a bordo; misma ruta que Python)
                                            │  ruta: "F F L F R"
                                            ▼
                                        EJECUTOR     (sigue la ruta, corrige con sensores, log)
@@ -115,7 +115,7 @@ python -m pc.imprimir maps/fisicos/mapa1.txt               # PDF para el plotter
 
 **Tests** (`python -m pytest`):
 - todos los algoritmos dan rutas válidas, y los que prometen ser óptimos lo son (contra un Dijkstra de referencia);
-- `test_planner_cpp.py` compila el planificador del carro en el PC y exige **la misma ruta, costo y nodos expandidos** que `bfs.py` en todos los mapas, y los mismos errores con mapas malos;
+- `test_planner_cpp.py` compila los planificadores del carro en el PC y exige **la misma ruta, costo y nodos expandidos** que `bfs.py` y `astar.py` en todos los mapas y en 60 mapas aleatorios (con ciclos y empates, hasta 16x16), y los mismos errores con mapas malos;
 - `test_enviar.py` prueba el protocolo contra un carro simulado;
 - `test_imprimir.py` verifica que las piezas del PDF cubren exactamente las paredes, sin superponerse.
 
@@ -132,7 +132,9 @@ arduino/agente/
     │   └── parametros.h        # valores por defecto (calibrados el 26/10/2026)
     ├── planner/                # sin Arduino.h: compila también en el PC
     │   ├── mapa.h/.cpp         # LectorMapa: valida la grilla línea por línea
-    │   └── bfs.h/.cpp          # BFS sobre (fila, col, orientación), arreglos estáticos
+    │   ├── busqueda.h          # Ruta, estados y acciones F/L/R compartidos por los planificadores
+    │   ├── bfs.h/.cpp          # BFS sobre (fila, col, orientación), arreglos estáticos
+    │   └── astar.h/.cpp        # A* con la misma heurística y desempate que astar.py (~60 KB estáticos)
     └── imu/
         └── mpu6050.h/.cpp      # giroscopio por I2C, sin librerías: integra el rumbo (eje Z)
 ```
@@ -182,6 +184,7 @@ Texto, una línea por comando, por `Serial` (115200) o por TCP en `192.168.4.1:2
 | `PLAN` | vuelve a calcular la ruta con el mapa guardado | ✅ |
 | `RUTA` | imprime la última ruta | ✅ |
 | `COSTO_GIRO <v>` | costo de L/R y vuelve a planear | ✅ |
+| `ALGO [bfs\|astar]` | algoritmo con el que planea (por defecto `bfs`); lo guarda y vuelve a planear. `pc.enviar --algo astar` lo usa | ⏳ falta probarlo en el carro |
 | `INFO` / `STOP` | estado (incluye `imu=ok/no` y la causa del último reinicio) / parar motores | ✅ |
 | `GO` | recorre la ruta desde la celda de inicio; calibra el giroscopio al arrancar (carro quieto) | ✅ probado el 26/10: 6 de 6 en la meta con la configuración final (~14 s) |
 | `PASO F [n]` / `PASO L` / `PASO R` / `PASO A` | un movimiento suelto, para calibrar (`A` = avanzar hasta la línea y alinearse) | ✅ probado |

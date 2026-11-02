@@ -25,7 +25,7 @@ agente-laberinto/
 ├── resultados/           # tablas de comparación para el informe (comparacion.csv)
 ├── arduino/
 │   ├── agente/           # firmware del carro: recibe el mapa, planea a bordo y recorre la ruta
-│   │   ├── src/planner/  #   lector del mapa y BFS en C++ (misma ruta que Python, lo verifican los tests)
+│   │   ├── src/planner/  #   lector del mapa, BFS y A* en C++ (misma ruta que Python, lo verifican los tests)
 │   │   └── src/imu/      #   giroscopio MPU6050: giros por ángulo y rumbo al avanzar
 │   ├── control_remoto/   # manejar el carro y ver los sensores desde el celular
 │   └── pruebas/          # sketches sueltos, uno por carpeta
@@ -47,14 +47,14 @@ agente-laberinto/
    11111
    ```
 2. **Ruta:** lista de movimientos relativos, por ejemplo `F F L F R`. `F` avanza una celda; `L` / `R` giran 90° a la izquierda / derecha.
-3. **Dónde se planea:** en el carro. El PC manda el mapa y el carro responde con la ruta. Python es la referencia: el BFS en C++ del carro tiene que dar exactamente la misma ruta (`pc/tests/test_planner_cpp.py`).
+3. **Dónde se planea:** en el carro. El PC manda el mapa y el carro responde con la ruta. Python es la referencia: el BFS y el A* en C++ del carro tienen que dar exactamente la misma ruta (`pc/tests/test_planner_cpp.py`). Por defecto el carro planea con BFS; `ALGO astar` (o `python -m pc.enviar <mapa> --algo astar`) lo cambia a A*.
 
 ## Cómo agregar un algoritmo
 
 1. Crear `pc/planners/<nombre>.py` con una clase `@registrar` que herede de `Planner` (ver el ejemplo en `pc/planners/bfs.py` y el contrato en `pc/planners/base.py`).
 2. Poner `optimiza = "acciones"`, `"costo"` o `None` según lo que garantice el algoritmo. Los tests verifican esa promesa.
 3. Correr `python -m pytest`. No hay que tocar nada más: `planear.py` y los tests lo encuentran solos.
-4. Para correrlo también en el carro: portarlo a `arduino/agente/src/planner/` y agregarlo a `test_planner_cpp.py`.
+4. Para correrlo también en el carro: portarlo a `arduino/agente/src/planner/` (como `astar.cpp`), agregarlo a `A_BORDO` en `test_planner_cpp.py` y en `pc/enviar.py`, y al comando `ALGO` de `agente.ino`.
 
 ## Cómo trabajamos con git
 

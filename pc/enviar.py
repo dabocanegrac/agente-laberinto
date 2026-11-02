@@ -3,10 +3,11 @@
     python -m pc.enviar maps/simulados/ejemplo_5x5.txt                    # por Wi-Fi (red del carro o hotspot)
     python -m pc.enviar maps/simulados/ejemplo_5x5.txt --puerto COM6      # por cable (pip install pyserial)
     python -m pc.enviar maps/simulados/ejemplo_5x5.txt --costo-giro 0.8
+    python -m pc.enviar maps/simulados/ejemplo_5x5.txt --algo astar     # el carro planea con A*
 
 Por Wi-Fi busca el carro solo: en la última IP donde lo encontró, en su red propia (192.168.4.1) o barriendo
 la subred del hotspot (el hotspot del celular no deja pasar mDNS ni broadcast). --ip fija la dirección.
-Compara la ruta del carro con la de pc/planners/bfs.py: si no coinciden, termina con error.
+Compara la ruta del carro con la del mismo algoritmo en pc/planners/: si no coinciden, termina con error.
 """
 
 import argparse
@@ -22,6 +23,8 @@ from pc import mapa as mapas
 from pc.modelo import COSTO_GIRO
 from pc.planners import REGISTRO, ejecutar
 
+# Algoritmos portados al carro (comando ALGO de arduino/agente/agente.ino).
+A_BORDO = ("bfs", "astar")
 IP_RED_PROPIA = "192.168.4.1"
 PUERTO_TCP = 23
 ULTIMA_IP = pathlib.Path.home() / ".agente-laberinto-ip"
@@ -147,16 +150,18 @@ def main(argv=None):
     p.add_argument("--puerto-tcp", type=int, default=PUERTO_TCP, help=argparse.SUPPRESS)
     p.add_argument("--puerto", help="puerto serie (COM6, /dev/cu.usbserial-...) en vez de Wi-Fi")
     p.add_argument("--costo-giro", type=float, default=COSTO_GIRO)
+    p.add_argument("--algo", choices=A_BORDO, default="bfs", help="algoritmo con el que planea el carro")
     p.add_argument("--timeout", type=float, default=5.0)
     args = p.parse_args(argv)
 
     m = mapas.leer(args.mapa)
-    esperada = ejecutar(REGISTRO["bfs"](args.costo_giro), m)
+    esperada = ejecutar(REGISTRO[args.algo](args.costo_giro), m)
 
     con = ConexionSerial(args.puerto, args.timeout) if args.puerto else ConexionTcp(args.ip, args.puerto_tcp, args.timeout)
     try:
-        con.enviar(f"COSTO_GIRO {args.costo_giro:g}")
-        # COSTO_GIRO vuelve a planear el mapa viejo; INFO sirve de barrera para descartar esa respuesta.
+        con.enviar(f"ALGO {args.algo}")
+        con.enviar(f"COSTO_GIRO {args.costo_giro!r}")  # repr: el carro lee el mismo double
+        # ALGO y COSTO_GIRO vuelven a planear el mapa viejo; INFO sirve de barrera para descartar esas respuestas.
         con.enviar("INFO")
         esperar(con, "OK mapa=")
         con.enviar("MAPA")
