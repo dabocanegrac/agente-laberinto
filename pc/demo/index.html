@@ -1,0 +1,666 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agente laberinto</title>
+<style>
+:root {
+  --fondo: #f4f5f7; --panel: #ffffff; --borde: #dfe2e6; --texto: #1d2125; --suave: #626b75;
+  --pared: #1d2125; --piso: #ffffff; --rejilla: #e9ecef; --visitada: #fff1e6;
+  --acento: #2f6fde; --carro: #e8590c; --meta: #2b8a3e; --ok: #2b8a3e; --aviso: #c77c02; --error: #d6336c;
+  --sombra: 0 1px 2px rgba(0,0,0,.06), 0 2px 8px rgba(0,0,0,.04);
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --fondo: #101215; --panel: #181b1f; --borde: #2b3036; --texto: #e7e9ec; --suave: #98a1ab;
+    --pared: #e7e9ec; --piso: #1e2227; --rejilla: #2b3036; --visitada: #3a2618;
+    --acento: #5b8def; --carro: #ff7a2f; --meta: #40c057; --ok: #40c057; --aviso: #f0a92e; --error: #f06595;
+    --sombra: none;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--fondo); color: var(--texto); font: 15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+button, input, select { font: inherit; color: inherit; }
+header { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px; padding: 12px 20px; background: var(--panel); border-bottom: 1px solid var(--borde); }
+header h1 { font-size: 18px; margin: 0; letter-spacing: -.01em; }
+header h1 small { font-weight: 400; color: var(--suave); margin-left: 6px; }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; margin-left: auto; }
+.chip { display: inline-flex; align-items: center; gap: 7px; padding: 4px 10px; border: 1px solid var(--borde); border-radius: 999px; font-size: 13px; white-space: nowrap; }
+.punto { width: 9px; height: 9px; border-radius: 50%; background: var(--suave); }
+.punto.ok { background: var(--ok); } .punto.aviso { background: var(--aviso); } .punto.error { background: var(--error); }
+main { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 16px; padding: 16px 20px; max-width: 1500px; margin: 0 auto; }
+@media (max-width: 960px) { main { grid-template-columns: 1fr; padding: 12px 16px; } header { padding: 10px 16px; } }
+.panel { background: var(--panel); border: 1px solid var(--borde); border-radius: 12px; box-shadow: var(--sombra); padding: 16px; min-width: 0; }
+.panel h2 { font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--suave); margin: 0 0 12px; }
+.fila { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.fila + .fila { margin-top: 10px; }
+label.campo { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--suave); }
+select, input[type=number], input[type=text] { background: var(--piso); border: 1px solid var(--borde); border-radius: 8px; padding: 6px 9px; min-width: 0; }
+input[type=number] { width: 80px; }
+button { background: var(--piso); border: 1px solid var(--borde); border-radius: 8px; padding: 7px 14px; cursor: pointer; font-weight: 500; }
+button:hover:not(:disabled) { border-color: var(--acento); }
+button:disabled { opacity: .45; cursor: not-allowed; }
+button.primario { background: var(--acento); border-color: var(--acento); color: #fff; }
+button.peligro { background: var(--error); border-color: var(--error); color: #fff; }
+button.grande { padding: 10px 22px; font-size: 16px; }
+.separador { flex: 1; }
+#lienzo { width: 100%; height: auto; display: block; max-height: 68vh; margin: 4px auto 10px; }
+#carro { transition: transform .9s ease-in-out; }
+.leyenda { display: flex; flex-wrap: wrap; gap: 14px; font-size: 12px; color: var(--suave); margin-bottom: 10px; }
+.leyenda i { display: inline-block; width: 18px; height: 4px; border-radius: 2px; vertical-align: middle; margin-right: 5px; }
+.aviso-mapa { font-size: 13px; padding: 8px 10px; border-radius: 8px; margin-top: 10px; display: none; }
+.aviso-mapa.ver { display: block; }
+.aviso-mapa.ok { background: color-mix(in srgb, var(--ok) 12%, transparent); color: var(--ok); }
+.aviso-mapa.mal { background: color-mix(in srgb, var(--aviso) 15%, transparent); color: var(--aviso); }
+.pestanas { display: flex; gap: 4px; border-bottom: 1px solid var(--borde); margin: -4px -4px 14px; padding: 0 4px; overflow-x: auto; }
+.pestanas button { border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: none; padding: 8px 12px; color: var(--suave); }
+.pestanas button.activa { color: var(--texto); border-bottom-color: var(--acento); }
+.vista { display: none; } .vista.activa { display: block; }
+table { width: 100%; border-collapse: collapse; font-size: 14px; }
+th { text-align: left; font-weight: 600; font-size: 12px; color: var(--suave); padding: 6px 8px; border-bottom: 1px solid var(--borde); }
+td { padding: 8px; border-bottom: 1px solid var(--borde); vertical-align: middle; }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+tr.alg { cursor: pointer; }
+tr.alg:hover td { background: color-mix(in srgb, var(--acento) 6%, transparent); }
+tr.alg.sel td { background: color-mix(in srgb, var(--acento) 12%, transparent); }
+.muestra { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 7px; vertical-align: -1px; }
+.barra-exp { height: 6px; border-radius: 3px; background: var(--acento); opacity: .6; margin-top: 4px; }
+.ruta { font-family: var(--mono); font-size: 13px; word-break: break-word; color: var(--suave); }
+.tabla { overflow-x: auto; }
+.tabla td:first-child { min-width: 170px; }
+.etiqueta { white-space: nowrap; display: inline-block; font-size: 11px; padding: 1px 7px; border-radius: 999px; border: 1px solid var(--borde); color: var(--suave); }
+.mejor { color: var(--ok); font-weight: 600; }
+.tarjetas { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+.tarjeta { border: 1px solid var(--borde); border-radius: 10px; padding: 12px; }
+.tarjeta h3 { margin: 0 0 8px; font-size: 13px; font-weight: 600; color: var(--suave); }
+.grande-num { font-size: 32px; font-weight: 650; font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
+.grande-num small { font-size: 15px; font-weight: 500; color: var(--suave); }
+.medidor { height: 10px; border-radius: 5px; background: var(--rejilla); overflow: hidden; margin: 8px 0 6px; }
+.medidor > div { height: 100%; width: 0; background: var(--ok); transition: width .4s, background .4s; }
+.nota { font-size: 12px; color: var(--suave); }
+.sensores { display: flex; gap: 16px; align-items: flex-end; height: 120px; padding-top: 6px; position: relative; }
+.sensor { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px; height: 100%; }
+.sensor .tubo { flex: 1; width: 100%; max-width: 46px; background: var(--rejilla); border-radius: 6px; position: relative; overflow: hidden; }
+.sensor .nivel { position: absolute; bottom: 0; left: 0; right: 0; background: var(--suave); transition: height .2s, background .2s; }
+.sensor .nivel.negro { background: var(--texto); }
+.sensor .umbral { position: absolute; left: -3px; right: -3px; border-top: 2px dashed var(--error); }
+.sensor span { font-size: 12px; color: var(--suave); font-variant-numeric: tabular-nums; }
+.cruceta { display: grid; grid-template-columns: repeat(3, 64px); grid-template-rows: repeat(2, 52px); gap: 8px; justify-content: start; }
+.cruceta button { font-size: 20px; padding: 0; }
+.parametros { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px 12px; margin: 10px 0; }
+.parametros label { display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: var(--suave); font-family: var(--mono); }
+.parametros input { width: 100%; font-family: var(--mono); }
+.parametros input.cambiado { border-color: var(--aviso); background: color-mix(in srgb, var(--aviso) 10%, var(--piso)); }
+#log { height: 420px; overflow-y: auto; font: 12.5px/1.5 var(--mono); background: var(--piso); border: 1px solid var(--borde); border-radius: 8px; padding: 8px 10px; }
+#log div { white-space: pre-wrap; word-break: break-word; }
+#log .h { color: var(--suave); } #log .ok { color: var(--ok); } #log .err { color: var(--error); font-weight: 600; } #log .env { color: var(--acento); }
+#log .t { color: var(--suave); opacity: .7; margin-right: 8px; }
+#avisos { position: fixed; right: 16px; bottom: 16px; display: flex; flex-direction: column; gap: 8px; z-index: 10; max-width: min(420px, calc(100vw - 32px)); }
+.toast { padding: 12px 14px; border-radius: 10px; color: #fff; box-shadow: 0 4px 16px rgba(0,0,0,.2); font-size: 14px; animation: entra .25s ease-out; }
+.toast.ok { background: #2b8a3e; } .toast.err { background: #c2255c; } .toast.info { background: #364fc7; }
+@keyframes entra { from { transform: translateY(10px); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { #carro { transition: none !important; } .toast { animation: none; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>Agente laberinto <small id="nombre-mapa"></small></h1>
+  <div class="chips">
+    <span class="chip" title="Conexión con el carro"><span class="punto" id="p-con"></span><span id="t-con">Buscando el carro…</span></span>
+    <span class="chip" title="Fase del ejecutor"><span class="punto" id="p-fase"></span><span id="t-fase">—</span></span>
+    <span class="chip" title="Giroscopio"><span class="punto" id="p-imu"></span><span id="t-imu">IMU —</span></span>
+    <span class="chip" title="Voltaje del pack"><span class="punto" id="p-bat"></span><span id="t-bat">— V</span></span>
+  </div>
+</header>
+
+<main>
+  <section class="panel">
+    <h2>Laberinto</h2>
+    <div class="fila">
+      <label class="campo">Mapa <select id="sel-mapa"></select></label>
+      <label class="campo">Costo de giro <input type="number" id="costo-giro" value="0.5" step="0.1" min="0"></label>
+      <span class="separador"></span>
+      <button id="b-enviar" disabled>Enviar al carro</button>
+    </div>
+    <svg id="lienzo" role="img" aria-label="Mapa del laberinto con la ruta y la posición del carro"></svg>
+    <div class="leyenda">
+      <span><i style="background:var(--acento)"></i>Ruta planeada</span>
+      <span><i style="background:var(--visitada);border:1px solid var(--carro)"></i>Recorrido del carro</span>
+      <span><i style="background:var(--meta)"></i>Meta</span>
+    </div>
+    <div class="fila">
+      <button class="primario grande" id="b-go" disabled>▶ GO</button>
+      <button class="grande" id="b-volver" disabled>↩ Volver</button>
+      <button class="peligro grande" id="b-stop" disabled>■ STOP</button>
+      <span class="separador"></span>
+      <span class="nota" id="t-tiempo"></span>
+    </div>
+    <div class="aviso-mapa" id="aviso-mapa"></div>
+  </section>
+
+  <section class="panel">
+    <nav class="pestanas" role="tablist">
+      <button class="activa" data-vista="v-alg">Algoritmos</button>
+      <button data-vista="v-tel">Telemetría</button>
+      <button data-vista="v-ctl">Control</button>
+      <button data-vista="v-log">Log</button>
+    </nav>
+
+    <div class="vista activa" id="v-alg">
+      <div class="tabla"><table>
+        <thead><tr><th>Algoritmo</th><th class="num">Acciones</th><th class="num">Costo</th><th class="num">Expandidos</th><th class="num">ms</th></tr></thead>
+        <tbody id="tabla-alg"></tbody>
+      </table></div>
+      <p class="nota" id="nota-alg"></p>
+    </div>
+
+    <div class="vista" id="v-tel">
+      <div class="tarjetas">
+        <div class="tarjeta">
+          <h3>Batería</h3>
+          <div class="grande-num" id="bat-v">—<small> V</small></div>
+          <div class="medidor"><div id="bat-barra"></div></div>
+          <div class="nota" id="bat-min">Mínimo del último movimiento: —</div>
+          <svg id="bat-historia" viewBox="0 0 200 40" preserveAspectRatio="none" style="width:100%;height:40px;margin-top:8px"></svg>
+          <div class="nota">Escala de 6.6 V (vacía) a 8.4 V (llena), en reposo.</div>
+        </div>
+        <div class="tarjeta">
+          <h3>Rumbo (giroscopio)</h3>
+          <div class="fila" style="align-items:center;gap:14px">
+            <svg viewBox="-50 -50 100 100" width="110" height="110" aria-label="Brújula del rumbo">
+              <circle r="44" fill="none" stroke="var(--borde)" stroke-width="2"/>
+              <g fill="var(--suave)" font-size="10" text-anchor="middle" dominant-baseline="central">
+                <text y="-35">0</text><text x="35">90</text><text y="35">180</text><text x="-35">-90</text>
+              </g>
+              <g id="aguja" style="transition:transform .2s"><path d="M0,-30 L6,4 L0,0 L-6,4 Z" fill="var(--carro)"/></g>
+              <circle r="3" fill="var(--texto)"/>
+            </svg>
+            <div><div class="grande-num" id="rumbo">—<small>°</small></div><div class="nota" id="imu-diag"></div></div>
+          </div>
+          <div class="fila"><button id="b-imu-on">Transmitir rumbo</button><button id="b-imu-cal">Calibrar</button></div>
+        </div>
+        <div class="tarjeta">
+          <h3>Sensores IR</h3>
+          <div class="sensores">
+            <div class="sensor"><div class="tubo"><div class="nivel" id="s-izq"></div><div class="umbral"></div></div><span id="n-izq">izq</span></div>
+            <div class="sensor"><div class="tubo"><div class="nivel" id="s-cen"></div><div class="umbral"></div></div><span id="n-cen">cen</span></div>
+            <div class="sensor"><div class="tubo"><div class="nivel" id="s-der"></div><div class="umbral"></div></div><span id="n-der">der</span></div>
+          </div>
+          <div class="fila"><button id="b-sens-on">Transmitir</button><button id="b-sens">Leer</button></div>
+        </div>
+        <div class="tarjeta">
+          <h3>Último giro</h3>
+          <div class="grande-num" id="giro-err">—<small>°</small></div>
+          <div class="nota" id="giro-det">Error final respecto al objetivo.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="vista" id="v-ctl">
+      <h3 style="font-size:13px;color:var(--suave);margin:0 0 8px">Movimiento manual</h3>
+      <div class="fila" style="align-items:flex-start;gap:20px">
+        <div class="cruceta">
+          <span></span><button data-paso="F" title="Avanzar una celda">↑</button><span></span>
+          <button data-paso="L" title="Girar a la izquierda">↺</button><button data-paso="A" title="Avanzar hasta la línea y alinearse" style="font-size:13px">línea</button><button data-paso="R" title="Girar a la derecha">↻</button>
+        </div>
+        <p class="nota" style="max-width:260px;margin:0">↑ avanza una celda, ↺ ↻ giran 90°, «línea» avanza hasta ver la línea de enfrente. El carro deja de saber dónde está en el mapa: para GO, ponerlo otra vez en la salida.</p>
+      </div>
+      <h3 style="font-size:13px;color:var(--suave);margin:18px 0 0">Parámetros del carro</h3>
+      <div class="parametros" id="parametros"><span class="nota">Conectar el carro para leerlos.</span></div>
+      <div class="fila">
+        <button id="b-get">Leer</button>
+        <button id="b-set" class="primario" disabled>Aplicar cambios</button>
+        <button id="b-save">Guardar en el carro</button>
+        <span class="nota">«Aplicar» manda SET y dura hasta reiniciar; «Guardar» los deja fijos (SAVE).</span>
+      </div>
+    </div>
+
+    <div class="vista" id="v-log">
+      <div class="fila" style="margin-bottom:8px">
+        <input type="text" id="comando" placeholder="Comando para el carro (INFO, PASO F, GET…)" style="flex:1" autocomplete="off">
+        <button id="b-cmd">Enviar</button>
+      </div>
+      <div id="log" aria-live="polite"></div>
+      <div class="fila"><label class="campo"><input type="checkbox" id="ver-auto"> Mostrar las consultas automáticas (BAT, INFO)</label></div>
+    </div>
+  </section>
+</main>
+<div id="avisos"></div>
+
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+const NS = "http://www.w3.org/2000/svg";
+const CELDA = 100, MARGEN = 34;
+const ORI = "NESO", ANG = { N: 0, E: 90, S: 180, O: 270 };
+const DELTA = { N: [-1, 0], E: [0, 1], S: [1, 0], O: [0, -1] };
+const COLORES = ["#2f6fde", "#e8590c", "#7048e8", "#0ca678", "#d6336c", "#1098ad"];
+const BAT_VACIA = 6.6, BAT_LLENA = 8.4;
+
+const e = {
+  conectado: false, mapa: null, algSel: null, moviendo: false, enRuta: false,
+  pose: null, angulo: 0, visitadas: new Set(), tInicio: 0,
+  mapaCarro: null, rutaCarro: null, imuOn: false, sensOn: false, umbral: 130,
+  parametros: {}, historiaBat: [],
+};
+
+// ---------- utilidades ----------
+function el(nombre, attrs = {}, padre) {
+  const n = document.createElementNS(NS, nombre);
+  for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, v);
+  if (padre) padre.appendChild(n);
+  return n;
+}
+function aviso(texto, tipo = "info", ms = 5000) {
+  const t = document.createElement("div");
+  t.className = "toast " + tipo;
+  t.textContent = texto;
+  $("avisos").appendChild(t);
+  setTimeout(() => t.remove(), ms);
+}
+async function cmd(linea, auto = false) {
+  if (!e.conectado) { if (!auto) aviso("El carro no está conectado", "err"); return false; }
+  const r = await fetch("/api/cmd", { method: "POST", body: JSON.stringify({ linea, auto }) });
+  const j = await r.json();
+  if (!j.ok && !auto) aviso("No se pudo mandar: " + linea, "err");
+  return j.ok;
+}
+const centro = (f, c) => [MARGEN + c * CELDA + CELDA / 2, MARGEN + f * CELDA + CELDA / 2];
+const clave = (f, c) => f + "," + c;
+
+// ---------- mapa ----------
+async function cargarMapas() {
+  const lista = await (await fetch("/api/mapas")).json();
+  const sel = $("sel-mapa");
+  sel.innerHTML = "";
+  for (const m of lista) sel.add(new Option(m.nombre, m.ruta));
+  let guardado = new URLSearchParams(location.search).get("mapa");   // ?mapa=maps/fisicos/mapa1.txt
+  try { guardado = guardado || localStorage.getItem("mapa"); } catch (_) {}
+  if (guardado && lista.some((m) => m.ruta === guardado)) sel.value = guardado;
+  await cargarMapa();
+}
+
+async function cargarMapa() {
+  const ruta = $("sel-mapa").value;
+  if (!ruta) return;
+  try { localStorage.setItem("mapa", ruta); } catch (_) {}
+  const r = await fetch(`/api/mapa?ruta=${encodeURIComponent(ruta)}&costo_giro=${$("costo-giro").value || 0.5}`);
+  const m = await r.json();
+  if (!r.ok) { aviso("Mapa inválido: " + m.error, "err"); return; }
+  e.mapa = m;
+  if (!e.algSel || !m.algoritmos.some((a) => a.nombre === e.algSel)) e.algSel = m.algoritmos.find((a) => a.nombre === "bfs") ? "bfs" : m.algoritmos[0]?.nombre;
+  $("nombre-mapa").textContent = "· " + ruta.replace(/^maps\//, "").replace(/\.txt$/, "");
+  if (!e.enRuta) ponerEnSalida();
+  dibujar();
+  tablaAlgoritmos();
+  revisarMapaCarro();
+}
+
+function ponerEnSalida() {
+  const [f, c, o] = e.mapa.inicio;
+  e.pose = { f, c, o };
+  e.angulo = ANG[o];
+  e.visitadas = new Set([clave(f, c)]);
+}
+
+function dibujar() {
+  const m = e.mapa, svg = $("lienzo");
+  const ancho = m.cols * CELDA + 2 * MARGEN, alto = m.filas * CELDA + 2 * MARGEN;
+  svg.setAttribute("viewBox", `0 0 ${ancho} ${alto}`);
+  svg.innerHTML = "";
+  el("rect", { x: MARGEN, y: MARGEN, width: m.cols * CELDA, height: m.filas * CELDA, fill: "var(--piso)" }, svg);
+  const gVis = el("g", { id: "visitadas" }, svg);
+  for (const k of e.visitadas) {
+    const [f, c] = k.split(",").map(Number);
+    el("rect", { x: MARGEN + c * CELDA + 4, y: MARGEN + f * CELDA + 4, width: CELDA - 8, height: CELDA - 8, rx: 10, fill: "var(--visitada)" }, gVis);
+  }
+  // rejilla y números de fila/columna
+  const g = el("g", { stroke: "var(--rejilla)", "stroke-width": 1 }, svg);
+  for (let c = 1; c < m.cols; c++) el("line", { x1: MARGEN + c * CELDA, y1: MARGEN, x2: MARGEN + c * CELDA, y2: MARGEN + m.filas * CELDA }, g);
+  for (let f = 1; f < m.filas; f++) el("line", { x1: MARGEN, y1: MARGEN + f * CELDA, x2: MARGEN + m.cols * CELDA, y2: MARGEN + f * CELDA }, g);
+  const gt = el("g", { fill: "var(--suave)", "font-size": 15, "text-anchor": "middle", "dominant-baseline": "central" }, svg);
+  for (let c = 0; c < m.cols; c++) el("text", { x: MARGEN + c * CELDA + CELDA / 2, y: MARGEN / 2 }, gt).textContent = c;
+  for (let f = 0; f < m.filas; f++) el("text", { x: MARGEN / 2, y: MARGEN + f * CELDA + CELDA / 2 }, gt).textContent = f;
+  // meta y salida
+  const [mf, mc] = m.meta, [mx, my] = centro(mf, mc);
+  el("rect", { x: mx - CELDA / 2 + 6, y: my - CELDA / 2 + 6, width: CELDA - 12, height: CELDA - 12, rx: 12, fill: "none", stroke: "var(--meta)", "stroke-width": 5 }, svg);
+  el("text", { x: mx, y: my - 27, fill: "var(--meta)", "font-size": 14, "font-weight": 700, "text-anchor": "middle" }, svg).textContent = "META";
+  const [sx, sy] = centro(m.inicio[0], m.inicio[1]);
+  el("text", { x: sx, y: sy - 28, fill: "var(--suave)", "font-size": 14, "font-weight": 700, "text-anchor": "middle" }, svg).textContent = "SALIDA";
+  // ruta del algoritmo elegido
+  const alg = m.algoritmos.find((a) => a.nombre === e.algSel);
+  if (alg && alg.estados) {
+    const puntos = [];
+    for (const [f, c] of alg.estados) {
+      const p = centro(f, c).join(",");
+      if (puntos[puntos.length - 1] !== p) puntos.push(p);
+    }
+    const color = colorAlg(alg.nombre);
+    el("polyline", { points: puntos.join(" "), fill: "none", stroke: color, "stroke-width": 7, "stroke-linecap": "round", "stroke-linejoin": "round", opacity: .55 }, svg);
+  }
+  // paredes: N y O de cada celda, más S de la última fila y E de la última columna
+  const gp = el("g", { stroke: "var(--pared)", "stroke-width": 8, "stroke-linecap": "square" }, svg);
+  for (let f = 0; f < m.filas; f++) for (let c = 0; c < m.cols; c++) {
+    const p = m.paredes[f][c], x = MARGEN + c * CELDA, y = MARGEN + f * CELDA;
+    if (p & 1) el("line", { x1: x, y1: y, x2: x + CELDA, y2: y }, gp);
+    if (p & 8) el("line", { x1: x, y1: y, x2: x, y2: y + CELDA }, gp);
+    if (f === m.filas - 1 && p & 4) el("line", { x1: x, y1: y + CELDA, x2: x + CELDA, y2: y + CELDA }, gp);
+    if (c === m.cols - 1 && p & 2) el("line", { x1: x + CELDA, y1: y, x2: x + CELDA, y2: y + CELDA }, gp);
+  }
+  // carro
+  const carro = el("g", { id: "carro" }, svg);
+  el("rect", { x: -20, y: -24, width: 40, height: 46, rx: 11, fill: "var(--carro)" }, carro);
+  el("path", { d: "M0,-16 L11,4 L0,-1 L-11,4 Z", fill: "#fff" }, carro);
+  ubicarCarro(0);
+}
+
+function colorAlg(nombre) {
+  const i = e.mapa.algoritmos.findIndex((a) => a.nombre === nombre);
+  return COLORES[Math.max(0, i) % COLORES.length];
+}
+
+function ubicarCarro(segundos) {
+  const carro = $("carro");
+  if (!carro || !e.pose) return;
+  const [x, y] = centro(e.pose.f, e.pose.c);
+  carro.style.transitionDuration = segundos + "s";
+  carro.style.transform = `translate(${x}px, ${y}px) rotate(${e.angulo}deg)`;
+}
+
+function marcarVisitada(f, c) {
+  const k = clave(f, c);
+  if (e.visitadas.has(k)) return;
+  e.visitadas.add(k);
+  el("rect", { x: MARGEN + c * CELDA + 4, y: MARGEN + f * CELDA + 4, width: CELDA - 8, height: CELDA - 8, rx: 10, fill: "var(--visitada)" }, $("visitadas"));
+}
+
+// ---------- algoritmos ----------
+function tablaAlgoritmos() {
+  const tb = $("tabla-alg"), algs = e.mapa.algoritmos;
+  tb.innerHTML = "";
+  const validos = algs.filter((a) => !a.error);
+  const minCosto = Math.min(...validos.map((a) => a.costo));
+  const maxExp = Math.max(1, ...validos.map((a) => a.expandidos));
+  for (const a of algs) {
+    const tr = document.createElement("tr");
+    tr.className = "alg" + (a.nombre === e.algSel ? " sel" : "");
+    const opt = a.optimiza ? `<span class="etiqueta">óptimo en ${a.optimiza}</span>` : `<span class="etiqueta">no garantiza óptimo</span>`;
+    if (a.error) {
+      tr.innerHTML = `<td><span class="muestra" style="background:${colorAlg(a.nombre)}"></span><b>${a.nombre}</b> ${opt}</td><td colspan="4">${a.error}</td>`;
+    } else {
+      tr.innerHTML = `<td><span class="muestra" style="background:${colorAlg(a.nombre)}"></span><b>${a.nombre}</b> ${opt}<div class="ruta">${a.ruta}</div></td>
+        <td class="num">${a.acciones}</td>
+        <td class="num ${a.costo === minCosto ? "mejor" : ""}">${+a.costo.toFixed(2)}</td>
+        <td class="num">${a.expandidos}<div class="barra-exp" style="width:${(100 * a.expandidos / maxExp).toFixed(0)}%;background:${colorAlg(a.nombre)}"></div></td>
+        <td class="num">${a.tiempo_ms.toFixed(2)}</td>`;
+    }
+    tr.onclick = () => { e.algSel = a.nombre; dibujar(); tablaAlgoritmos(); };
+    tb.appendChild(tr);
+  }
+  $("nota-alg").textContent = `Toca una fila para ver su ruta en el mapa. Costo: avanzar = 1, girar = ${$("costo-giro").value}. El carro siempre recorre la ruta de BFS, que calcula a bordo. ${e.bfsCarro || ""}`;
+}
+
+// ---------- el mapa que tiene el carro ----------
+function revisarMapaCarro() {
+  const a = $("aviso-mapa");
+  if (!e.mapa || !e.conectado || !e.mapaCarro) { a.className = "aviso-mapa"; return; }
+  const m = e.mapa, c = e.mapaCarro;
+  const bfs = m.algoritmos.find((x) => x.nombre === "bfs");
+  // Si el mapa llegó con «Enviar al carro» se conocen la salida y la meta; si no, solo el tamaño y la ruta.
+  const igual = c.filas === m.filas && c.cols === m.cols &&
+    (c.inicio ? c.inicio === m.inicio.join(",") && c.meta === m.meta.join(",") : !!e.rutaCarro && !!bfs && e.rutaCarro === bfs.ruta);
+  if (!igual) {
+    a.className = "aviso-mapa ver mal";
+    a.textContent = `El carro tiene otro mapa (${c.filas}x${c.cols}${c.inicio ? `, salida ${c.inicio}, meta ${c.meta}` : ""}${e.rutaCarro ? `, ruta ${e.rutaCarro}` : ""}). Usa «Enviar al carro» antes de GO.`;
+  } else if (e.rutaCarro && bfs && e.rutaCarro !== bfs.ruta) {
+    a.className = "aviso-mapa ver mal";
+    a.textContent = `La ruta del carro (${e.rutaCarro}) no coincide con la de BFS en Python (${bfs.ruta}).`;
+  } else {
+    a.className = "aviso-mapa ver ok";
+    a.textContent = e.rutaCarro ? `✓ El carro tiene este mapa y calculó la misma ruta que BFS en Python: ${e.rutaCarro}` : "✓ El carro tiene este mapa.";
+  }
+}
+
+// ---------- líneas que manda el carro ----------
+function procesar(t) {
+  let m;
+  if ((m = t.match(/^OK MAPA (\d+)x(\d+) inicio=(\d+),(\d+),([NESO]) meta=(\d+),(\d+)/))) {
+    e.mapaCarro = { filas: +m[1], cols: +m[2], inicio: `${m[3]},${m[4]},${m[5]}`, meta: `${m[6]},${m[7]}` };
+    e.rutaCarro = null;
+    revisarMapaCarro();
+  } else if ((m = t.match(/^OK mapa=(\d+)x(\d+)/)) && !e.mapaCarro) {
+    e.mapaCarro = { filas: +m[1], cols: +m[2], inicio: null, meta: null };   // INFO no dice salida ni meta
+    cmd("RUTA", true);
+  }
+  if (t.startsWith("RUTA") && !e.enRuta) { e.rutaCarro = t.slice(4).trim(); revisarMapaCarro(); }
+  if ((m = t.match(/^# acciones=(\d+) costo=([\d.]+) expandidos=(\d+) tiempo=(\d+) us/))) {
+    e.bfsCarro = `En el carro (ESP32-S3), BFS tardó ${m[4]} µs y expandió ${m[3]} nodos.`;
+    tablaAlgoritmos();
+  }
+  if ((m = t.match(/^OK (GO|VOLVER) (\d+) acciones/))) {
+    e.moviendo = e.enRuta = true;
+    e.tInicio = performance.now();
+    if (m[1] === "GO") { ponerEnSalida(); dibujar(); }
+    actualizarBotones();
+    aviso(m[1] === "GO" ? "¡Arranca!" : "Volviendo a la salida", "info", 2500);
+  } else if ((m = t.match(/^# F x(\d+) -> \((\d+),(\d+),([NESO])\)/))) {
+    const n = +m[1], f0 = e.pose.f, c0 = e.pose.c, [df, dc] = DELTA[e.pose.o];
+    e.pose = { f: +m[2], c: +m[3], o: m[4] };
+    for (let i = 1; i <= n; i++) setTimeout(() => marcarVisitada(f0 + df * i, c0 + dc * i), i * 480);
+    ubicarCarro(0.5 * n + 0.15);
+  } else if ((m = t.match(/^# ([LR]) -> ([NESO])/))) {
+    e.angulo += m[1] === "R" ? 90 : -90;
+    e.pose.o = m[2];
+    ubicarCarro(0.9);
+  } else if ((m = t.match(/^OK (META|SALIDA) en ([\d.]+) s(?: \(paredes (\d+)\/(\d+)\))?/))) {
+    e.moviendo = e.enRuta = false;
+    $("t-tiempo").textContent = `${m[1] === "META" ? "Llegó a la meta" : "Volvió a la salida"} en ${m[2]} s` + (m[3] ? ` · vio ${m[3]} de ${m[4]} paredes` : "");
+    aviso(m[1] === "META" ? `🏁 ¡Llegó a la meta en ${m[2]} s!` : `Volvió a la salida en ${m[2]} s`, "ok", 7000);
+    actualizarBotones();
+  } else if (t.startsWith("OK PASO")) {
+    e.moviendo = true; actualizarBotones();
+  } else if (t === "OK fin paso" || t === "OK stop") {
+    e.moviendo = e.enRuta = false; actualizarBotones();
+  }
+  if (t.startsWith("ERR") || t.startsWith("# ERR")) {
+    if (e.moviendo) { e.moviendo = e.enRuta = false; actualizarBotones(); }
+    aviso(t.replace(/^#\s*/, ""), "err", 9000);
+  }
+  // telemetría
+  if ((m = t.match(/^OK bat=([\d.]+)V.*?min_mov=([\d.]+)V/))) bateria(+m[1], +m[2] || null);
+  else if ((m = t.match(/^# bateria: min=([\d.]+) V.*ahora ([\d.]+) V/))) bateria(+m[2], +m[1]);
+  if ((m = t.match(/^OK mapa=.*fase=(\w+) imu=(\w+)(?: bat=([\d.]+)V)?/))) {
+    fase(m[1]);
+    $("p-imu").className = "punto " + (m[2] === "ok" ? "ok" : "error");
+    $("t-imu").textContent = m[2] === "ok" ? "IMU ok" : "IMU no responde";
+    if (m[3]) bateria(+m[3]);
+  }
+  if ((m = t.match(/^(?:OK )?rumbo=(-?[\d.]+)/))) rumbo(+m[1]);
+  if ((m = t.match(/^# rumbo=(-?[\d.]+) objetivo=(-?\d+) pulsos=(\d+)/))) {
+    rumbo(+m[1]);
+    const err = +m[1] - +m[2];
+    $("giro-err").innerHTML = `${err >= 0 ? "+" : ""}${err.toFixed(1)}<small>°</small>`;
+    $("giro-det").textContent = `Rumbo ${(+m[1]).toFixed(1)}° · objetivo ${m[2]}° · ${m[3]} pulsos de corrección` + (e.corte ? ` · ${e.corte}` : "");
+    e.corte = null;
+  }
+  if ((m = t.match(/^# corte giro: falta=([\d.-]+) vel=(-?\d+) pwm=(-?\d+) dur=(\d+)ms/))) e.corte = `cortó a ${m[2]}°/s tras ${m[4]} ms`;
+  if ((m = t.match(/^OK imu_diag reinicios=(\d+)/))) $("imu-diag").textContent = `Reinicios del MPU: ${m[1]}`;
+  if ((m = t.match(/^(?:OK )?izq=(\d+) cen=(\d+) der=(\d+)(?:\s+\(umbral=(\d+)\))?/))) sensores(+m[1], +m[2], +m[3], m[4] && +m[4]);
+  if (/^OK t_celda=/.test(t)) parametros(t.slice(3));
+  if (t === "OK imu on" || t === "OK imu off") { e.imuOn = t.endsWith("on"); $("b-imu-on").textContent = e.imuOn ? "Dejar de transmitir" : "Transmitir rumbo"; }
+  if (t === "OK sens on" || t === "OK sens off") { e.sensOn = t.endsWith("on"); $("b-sens-on").textContent = e.sensOn ? "Dejar de transmitir" : "Transmitir"; }
+}
+
+function fase(f) {
+  $("t-fase").textContent = f === "QUIETO" ? "Quieto" : f.toLowerCase().replace("_", " ");
+  $("p-fase").className = "punto " + (f === "QUIETO" ? "" : "aviso");
+  if (f === "QUIETO" && e.moviendo) { e.moviendo = e.enRuta = false; actualizarBotones(); }
+}
+
+function bateria(v, minMov) {
+  const pct = Math.max(0, Math.min(1, (v - BAT_VACIA) / (BAT_LLENA - BAT_VACIA)));
+  const clase = v >= 7.6 ? "ok" : v >= 7.0 ? "aviso" : "error";
+  const color = { ok: "var(--ok)", aviso: "var(--aviso)", error: "var(--error)" }[clase];
+  $("t-bat").textContent = v.toFixed(2) + " V";
+  $("p-bat").className = "punto " + clase;
+  $("bat-v").innerHTML = `${v.toFixed(2)}<small> V</small>`;
+  $("bat-barra").style.width = (pct * 100).toFixed(0) + "%";
+  $("bat-barra").style.background = color;
+  if (minMov) $("bat-min").textContent = `Mínimo del último movimiento: ${minMov.toFixed(2)} V (cae ${(v - minMov).toFixed(2)} V)`;
+  if (!e.moviendo) {
+    e.historiaBat.push(v);
+    if (e.historiaBat.length > 120) e.historiaBat.shift();
+    const h = $("bat-historia"), n = e.historiaBat.length;
+    const lo = Math.min(...e.historiaBat) - 0.05, hi = Math.max(...e.historiaBat) + 0.05;
+    const pts = e.historiaBat.map((x, i) => `${n > 1 ? (200 * i) / (n - 1) : 0},${40 - (40 * (x - lo)) / (hi - lo)}`).join(" ");
+    h.innerHTML = `<polyline points="${pts}" fill="none" stroke="${color}" stroke-width="2" vector-effect="non-scaling-stroke"/>`;
+  }
+}
+
+function rumbo(r) {
+  $("rumbo").innerHTML = `${r.toFixed(1)}<small>°</small>`;
+  $("aguja").style.transform = `rotate(${r}deg)`;
+}
+
+function sensores(i, c, d, umbral) {
+  if (umbral) e.umbral = umbral;
+  for (const [id, v] of [["izq", i], ["cen", c], ["der", d]]) {
+    const n = $("s-" + id);
+    n.style.height = Math.min(100, v / 10) + "%";
+    n.classList.toggle("negro", v > e.umbral);
+    $("n-" + id).textContent = `${id} ${v}`;
+  }
+  document.querySelectorAll(".umbral").forEach((u) => (u.style.bottom = e.umbral / 10 + "%"));
+}
+
+function parametros(texto) {
+  const caja = $("parametros");
+  const nuevos = Object.fromEntries(texto.trim().split(/\s+/).map((p) => p.split("=")));
+  e.parametros = nuevos;
+  if ("umbral" in nuevos) e.umbral = +nuevos.umbral;
+  caja.innerHTML = "";
+  for (const [k, v] of Object.entries(nuevos)) {
+    const l = document.createElement("label");
+    l.innerHTML = `${k}<input type="number" step="1" data-param="${k}" value="${v}">`;
+    caja.appendChild(l);
+  }
+  caja.querySelectorAll("input").forEach((inp) => inp.addEventListener("input", () => {
+    inp.classList.toggle("cambiado", inp.value !== e.parametros[inp.dataset.param]);
+    $("b-set").disabled = !caja.querySelector(".cambiado");
+  }));
+  $("b-set").disabled = true;
+}
+
+// ---------- botones ----------
+function actualizarBotones() {
+  const c = e.conectado, mov = e.moviendo;
+  $("b-enviar").disabled = !c || mov;
+  $("b-go").disabled = !c || mov;
+  $("b-volver").disabled = !c || mov;
+  $("b-stop").disabled = !c;
+  document.querySelectorAll("[data-paso]").forEach((b) => (b.disabled = !c || mov));
+  $("p-fase").className = "punto " + (mov ? "aviso" : "");
+  $("t-fase").textContent = !c ? "—" : mov ? (e.enRuta ? "En ruta" : "Moviéndose") : "Quieto";
+}
+
+$("sel-mapa").onchange = cargarMapa;
+$("costo-giro").onchange = cargarMapa;
+$("b-enviar").onclick = async () => {
+  e.mapaCarro = null; e.rutaCarro = null;
+  const r = await fetch("/api/mapa/enviar", { method: "POST", body: JSON.stringify({ ruta: $("sel-mapa").value, costo_giro: +$("costo-giro").value }) });
+  const j = await r.json();
+  aviso(j.ok ? "Mapa enviado: el carro calcula la ruta" : "No se pudo enviar el mapa" + (j.error ? ": " + j.error : ""), j.ok ? "info" : "err", 3000);
+};
+$("b-go").onclick = () => { $("t-tiempo").textContent = ""; cmd("GO"); };
+$("b-volver").onclick = () => cmd("VOLVER");
+$("b-stop").onclick = () => cmd("STOP");
+document.querySelectorAll("[data-paso]").forEach((b) => (b.onclick = () => {
+  const p = b.dataset.paso;
+  if (e.pose && (p === "L" || p === "R")) { e.angulo += p === "R" ? 90 : -90; e.pose.o = ORI[(ORI.indexOf(e.pose.o) + (p === "R" ? 1 : 3)) % 4]; ubicarCarro(0.9); }
+  if (e.pose && (p === "F" || p === "A")) {
+    const [df, dc] = DELTA[e.pose.o], f = e.pose.f + df, c = e.pose.c + dc;
+    if (f >= 0 && c >= 0 && f < e.mapa.filas && c < e.mapa.cols) { e.pose.f = f; e.pose.c = c; marcarVisitada(f, c); ubicarCarro(0.6); }
+  }
+  cmd("PASO " + p);
+}));
+$("b-imu-on").onclick = () => cmd(e.imuOn ? "IMU OFF" : "IMU ON");
+$("b-imu-cal").onclick = () => cmd("IMU CAL");
+$("b-sens-on").onclick = () => cmd(e.sensOn ? "SENS OFF" : "SENS ON");
+$("b-sens").onclick = () => cmd("SENS");
+$("b-get").onclick = () => cmd("GET");
+$("b-save").onclick = () => cmd("SAVE");
+$("b-set").onclick = async () => {
+  for (const inp of document.querySelectorAll("#parametros input.cambiado")) await cmd(`SET ${inp.dataset.param} ${inp.value}`);
+};
+function enviarComando() {
+  const t = $("comando").value.trim();
+  if (t) { cmd(t); $("comando").value = ""; }
+}
+$("b-cmd").onclick = enviarComando;
+$("comando").addEventListener("keydown", (ev) => { if (ev.key === "Enter") enviarComando(); });
+document.querySelectorAll(".pestanas button").forEach((b) => (b.onclick = () => {
+  document.querySelectorAll(".pestanas button").forEach((x) => x.classList.toggle("activa", x === b));
+  document.querySelectorAll(".vista").forEach((v) => v.classList.toggle("activa", v.id === b.dataset.vista));
+  if (b.dataset.vista === "v-log") $("log").scrollTop = $("log").scrollHeight;   // oculta no baja sola
+}));
+document.addEventListener("keydown", (ev) => {   // barra espaciadora = STOP, para la demo
+  if (ev.key === " " && document.activeElement.tagName !== "INPUT" && e.conectado) { ev.preventDefault(); cmd("STOP"); }
+});
+
+// ---------- log ----------
+const CONSULTA = /^(OK bat=|OK mapa=)/;
+function registrar(texto, clase, t, auto) {
+  const log = $("log");
+  const d = document.createElement("div");
+  d.className = clase;
+  if (auto || CONSULTA.test(texto)) d.dataset.auto = "1";
+  if (d.dataset.auto && !$("ver-auto").checked) d.hidden = true;
+  const hora = new Date(t * 1000).toLocaleTimeString("es-CO", { hour12: false });
+  d.innerHTML = `<span class="t">${hora}</span>`;
+  d.appendChild(document.createTextNode(texto));
+  const abajo = log.scrollHeight - log.scrollTop - log.clientHeight < 40;
+  log.appendChild(d);
+  while (log.childElementCount > 1500) log.firstChild.remove();
+  if (abajo) log.scrollTop = log.scrollHeight;
+}
+$("ver-auto").onchange = () => document.querySelectorAll("#log [data-auto]").forEach((d) => (d.hidden = !$("ver-auto").checked));
+
+// ---------- conexión ----------
+function conexion(conectado, ip) {
+  const antes = e.conectado;
+  e.conectado = conectado;
+  $("p-con").className = "punto " + (conectado ? "ok" : "error");
+  $("t-con").textContent = conectado ? `Carro en ${ip}` : "Buscando el carro…";
+  if (conectado && !antes) { e.mapaCarro = null; cmd("INFO", true); cmd("BAT", true); cmd("GET", true); cmd("IMU DIAG", true); }
+  if (!conectado) { e.moviendo = e.enRuta = false; }
+  actualizarBotones();
+  revisarMapaCarro();
+}
+
+function escuchar() {
+  const fuente = new EventSource("/api/eventos");
+  fuente.onmessage = (ev) => {
+    const d = JSON.parse(ev.data);
+    if (d.tipo === "estado") conexion(d.conectado, d.ip);
+    else if (d.tipo === "enviado") registrar("› " + d.texto, "env", d.t, d.auto);
+    else if (d.tipo === "linea") {
+      const t = d.texto;
+      registrar(t, t.startsWith("ERR") || t.startsWith("# ERR") ? "err" : t.startsWith("#") ? "h" : t.startsWith("OK") ? "ok" : "", d.t);
+      if (!d.historial) procesar(t);   // lo que pasó antes de abrir la página: solo al log
+    }
+  };
+  fuente.onerror = () => conexion(false);
+}
+
+setInterval(() => {   // consultas automáticas, solo con el carro quieto (el ADC demora unos ms el loop)
+  if (e.conectado && !e.moviendo) cmd("BAT", true);
+}, 5000);
+setInterval(() => { if (e.conectado && !e.moviendo) cmd("INFO", true); }, 15000);
+
+cargarMapas().then(escuchar);
+actualizarBotones();
+</script>
+</body>
+</html>
