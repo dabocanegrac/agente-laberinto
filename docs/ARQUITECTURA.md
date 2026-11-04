@@ -235,6 +235,7 @@ El PC solo observa: si se cae la red a mitad de un `GO`, el carro sigue y termin
 
 - Divisor 6.6k (al + después del interruptor general) / 2.2k (a GND) con 10 nF en GPIO 1 (ADC1, funciona con el Wi-Fi). `bat_k` corrige la tolerancia de las resistencias: se mide el pack con el multímetro y `BAT CAL <voltios>` + `SAVE` (04/11/2026: relación real 4.195).
 - `BAT` y `INFO` dan el voltaje. Mientras se mueve se lee cada 5 ms y al terminar cada movimiento sale `# bateria: min=X V`. Con el pack a 8.0 V en reposo: ~0.6 V de caída en los giros y ~0.36 V al avanzar (04/11/2026).
+- **Compensación:** todo PWM se escala por `(v_ref - v_caida) / (V_bat - v_caida)`, así el motor recibe en promedio lo mismo que con el pack en `v_ref` y `t_celda` no depende de la carga. `V_bat` se filtra (~1 s) para seguir la carga y no las caídas de cada arranque (si las siguiera, subir el PWM haría caer más el pack). `v_caida` es lo que se come el driver: ~2 V el L298N, ~0.3 V un DRV8833 o TB6612. `v_ref=0` la apaga; con la lectura por debajo de 5 V (divisor suelto) no compensa. `BAT` muestra el factor (`factor_pwm`). *(Flasheada el 04/11/2026; falta calibrar `t_celda` y `v_ref` con el laberinto.)*
 
 ### 4.7 Giros con giroscopio
 

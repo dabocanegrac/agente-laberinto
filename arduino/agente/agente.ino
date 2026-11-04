@@ -122,10 +122,20 @@ void parar() {
   digitalWrite(PIN_IZQ_AT, LOW);
 }
 
+// Voltaje del pack filtrado (~1 s): la compensación sigue la carga, no las caídas de cada arranque (si siguiera
+// esas, subir el PWM haría caer más el pack). Lo actualiza atenderBateria().
+float vBat = 0;
+
+float factorBat() {
+  float caida = par.v_caida / 100.0f;
+  if (par.v_ref <= 0 || vBat < 5.0f || vBat <= caida) return 1.0f;   // divisor suelto: sin compensar
+  return (par.v_ref / 100.0f - caida) / (vBat - caida);
+}
+
 void motor(uint8_t en, uint8_t inAd, uint8_t inAt, int pwm) {
   digitalWrite(inAd, pwm > 0);
   digitalWrite(inAt, pwm < 0);
-  analogWrite(en, constrain(abs(pwm), 0, 255));
+  analogWrite(en, constrain((int)lroundf(abs(pwm) * factorBat()), 0, 255));
 }
 
 int ultDer = 0, ultIzq = 0;   // último PWM pedido, para saber hacia dónde frenar
@@ -226,9 +236,12 @@ void atenderBateria() {
   if (!moviendo && moviendoAntes) logf("# bateria: min=%.2f V durante el movimiento, ahora %.2f V", batMin,
                                         voltiosBat(leerPinBat(32)));
   moviendoAntes = moviendo;
-  if (moviendo && millis() - ultimaBat >= 5) {
+  unsigned long dt = millis() - ultimaBat;
+  if (dt >= (moviendo ? 5 : 100)) {
     ultimaBat = millis();
-    batMin = min(batMin, voltiosBat(leerPinBat(4)));
+    float v = voltiosBat(leerPinBat(4));
+    if (moviendo) batMin = min(batMin, v);
+    vBat += min(dt / 1000.0f, 1.0f) * (v - vBat);
   }
 }
 
@@ -837,7 +850,8 @@ void Consola::procesar(char* l) {
         s->printf("OK bat=%.2fV bat_k=%d (SAVE para guardarlo)\n", voltiosBat(mv), k);
       }
     } else {
-      s->printf("OK bat=%.2fV pin=%.0fmV min_mov=%.2fV bat_k=%d\n", voltiosBat(mv), mv, batMin, par.bat_k);
+      s->printf("OK bat=%.2fV pin=%.0fmV min_mov=%.2fV bat_k=%d factor_pwm=%.3f\n", voltiosBat(mv), mv, batMin, par.bat_k,
+                factorBat());
     }
   } else if (strcmp(cmd, "INFO") == 0) {
     if (hayMapa) s->printf("OK mapa=%dx%d", mapa.filas, mapa.cols);
@@ -883,6 +897,7 @@ void setup() {
   analogReadResolution(12);
   prefs.begin("agente", false);
   cargarParametros();
+  vBat = voltiosBat(leerPinBat(64));
   // Al prender, el giroscopio tarda en estabilizarse y la primera calibración suele salir ruidosa:
   // reintentar. Si igual no queda, el GO vuelve a calibrar.
   if (imu::iniciar(PIN_IMU_SDA, PIN_IMU_SCL, &par.imu_signo)) {

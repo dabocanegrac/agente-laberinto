@@ -42,6 +42,10 @@ struct Parametros {
   int kr        = 8;    // PWM por grado de desvío del rumbo al avanzar (0 = no corregir con el giroscopio)
   int imu_signo = 1;    // 1 = chip hacia arriba; -1 si quedó boca abajo (el rumbo crece al revés)
   int bat_k     = 4000; // V_bat = V_pin * bat_k / 1000 (divisor 6.6k/2.2k = 4.0); lo ajusta BAT CAL <voltios>
+  // Compensación por batería: todo PWM se escala por (v_ref - v_caida) / (V_bat - v_caida), así el motor recibe
+  // en promedio lo mismo que con el pack en v_ref y t_celda no depende de la carga. En centésimas de voltio.
+  int v_ref     = 780;  // pack con que se calibró (7.80 V); 0 = sin compensación
+  int v_caida   = 200;  // lo que se come el driver: ~2 V el L298N, ~0.3 V un DRV8833 o TB6612
 };
 
 struct DefParametro {
@@ -65,5 +69,6 @@ const DefParametro DEF_PARAMETROS[] = {
   {"kp_giro", &Parametros::kp_giro},           {"ki_giro", &Parametros::ki_giro},
   {"t_pulso", &Parametros::t_pulso},
   {"kr", &Parametros::kr},               {"imu_signo", &Parametros::imu_signo},
-  {"bat_k", &Parametros::bat_k},
+  {"bat_k", &Parametros::bat_k},           {"v_ref", &Parametros::v_ref},
+  {"v_caida", &Parametros::v_caida},
 };
