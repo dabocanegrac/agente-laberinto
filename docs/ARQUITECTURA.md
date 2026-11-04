@@ -227,8 +227,15 @@ El PC solo observa: si se cae la red a mitad de un `GO`, el carro sigue y termin
 - **Giroscopio en su propia tarea** (500 Hz, prioridad 3): nada del loop frena la integración del rumbo.
 - **Calibración verificada:** si la desviación de las muestras pasa de 25 (crudo), el carro se movió: el `GO` reintenta una vez y si no, `ERR` y no arranca. Quieto da ~2. Al prender reintenta 3 veces. *(La detección de movimiento todavía no se probó con el carro moviéndose.)*
 - **Giroscopio caído:** 25 lecturas I2C fallidas seguidas → `# ERR el giroscopio dejó de responder` y giros por tiempo.
+- **Giroscopio reiniciado:** si una caída de voltaje reinicia el MPU, el I2C sigue respondiendo pero el chip queda dormido (`PWR_MGMT_1=0x40`), el giroscopio da 0 y el rumbo deriva a −sesgo/65.5 °/s. Cada ~50 ms se revisa `PWR_MGMT_1`: si cambió, se reconfigura y sale `# ERR el giroscopio se reinició`. `IMU DIAG` muestra los reinicios, la lectura cruda, las lecturas iguales seguidas y los fallos de I2C. Pasó una vez con el pack de 18650 (31/10/2026) y no se repitió en ~80 giros.
 - **Timeout:** si en 90 s no llegó a la meta, `STOP` y `ERR`.
 - **Hotspot:** si no lo encuentra en 20 s deja de buscarlo (mientras busca, salta de canal y la red propia se vuelve inestable). `RED CONECTAR` reintenta.
+
+### Batería
+
+- Divisor 6.6k (al + después del interruptor general) / 2.2k (a GND) con 10 nF en GPIO 1 (ADC1, funciona con el Wi-Fi). `bat_k` corrige la tolerancia de las resistencias: se mide el pack con el multímetro y `BAT CAL <voltios>` + `SAVE` (04/11/2026: relación real 4.195).
+- `BAT` y `INFO` dan el voltaje. Mientras se mueve se lee cada 5 ms y al terminar cada movimiento sale `# bateria: min=X V`. Con el pack a 8.0 V en reposo: ~0.6 V de caída en los giros y ~0.36 V al avanzar (04/11/2026).
+- **Compensación:** todo PWM se escala por `(v_ref - v_caida) / (V_bat - v_caida)`, así el motor recibe en promedio lo mismo que con el pack en `v_ref` y `t_celda` no depende de la carga. `V_bat` se filtra (~1 s) para seguir la carga y no las caídas de cada arranque (si las siguiera, subir el PWM haría caer más el pack). `v_caida` es lo que se come el driver: ~2 V el L298N, ~0.3 V un DRV8833 o TB6612. `v_ref=0` la apaga; con la lectura por debajo de 5 V (divisor suelto) no compensa. `BAT` muestra el factor (`factor_pwm`). *(Flasheada el 04/11/2026; falta calibrar `t_celda` y `v_ref` con el laberinto.)*
 
 ### 4.7 Giros con giroscopio
 
@@ -236,11 +243,13 @@ Los giros por tiempo resultaron muy irregulares (±15-25°): dependen de las pil
 
 - El rumbo se integra en cada `loop()` (eje Z, ±500 °/s, filtro de 44 Hz). El sesgo se mide con el carro quieto al prender y al empezar cada `GO`; la deriva medida fue ~0.2° en 48 s.
 - En el `GO` el objetivo es **absoluto** (0°, 90°, 180°… desde la salida): el error de un giro no se arrastra al siguiente.
-- El giro corta a `90° - giro_antic_r` (derecha) o `90° - giro_antic_l` (izquierda) y frena; la inercia lo lleva el resto.
+- **Velocidad controlada:** con PWM fijo, la velocidad de giro variaba entre 105 y 300 °/s (el pack de 18650 cae con cada giro y se recupera en reposo, y el piso no es parejo), y con ella lo que se pasaba al cortar (6-39°). Ahora un PI con la velocidad del giroscopio pone el PWM: `giro_vel` °/s, que bajan linealmente a `giro_vel_min` en los últimos `giro_lento` grados (`kp_giro`, `ki_giro`; arranca en `pwm_giro` y puede ir en reversa para frenar).
+- El giro corta a `90° - giro_antic_r` (derecha) o `90° - giro_antic_l` (izquierda) y frena; la inercia lo lleva el resto. Cada corte deja en el log `# corte giro: falta vel pwm dur`.
 - Si al terminar el error pasa de `giro_tol`, da **pulsos** de `t_pulso` ms hacia el lado que falta (máximo 8). Los pulsos frenan sin contramarcha: con un pulso tan corto, la reversa deshace lo que giró.
 - Al avanzar, el giroscopio mantiene el rumbo: `kr` PWM por grado de desvío (máximo ±60). Los sensores laterales (`kp`) quedan de respaldo.
 - Protecciones: si el rumbo crece al revés del giro, para (`imu_signo` mal puesto); si no llega en 3 × `t_giro`, para. Si el giroscopio no responde al prender, los giros vuelven a ser por tiempo (`t_giro`).
-- Resultado (26/10/2026): giros a ±4° con 0-4 pulsos.
+- Resultado (26/10/2026, 4xAA, PWM fijo): giros a ±4° con 0-4 pulsos.
+- Resultado (31/10/2026, 18650, velocidad controlada, `antic` = 2 a los dos lados): R +0.6° ±1.9, L −1.5° ±0.5, sin pulsos. Se calibró con una vuelta completa a cada lado (4 R y 4 L) para que el desnivel del piso se promedie.
 
 ## 5. Laberinto físico
 
