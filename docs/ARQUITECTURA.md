@@ -231,6 +231,11 @@ El PC solo observa: si se cae la red a mitad de un `GO`, el carro sigue y termin
 - **Timeout:** si en 90 s no llegó a la meta, `STOP` y `ERR`.
 - **Hotspot:** si no lo encuentra en 20 s deja de buscarlo (mientras busca, salta de canal y la red propia se vuelve inestable). `RED CONECTAR` reintenta.
 
+### Batería
+
+- Divisor 6.6k (al + después del interruptor general) / 2.2k (a GND) con 10 nF en GPIO 1 (ADC1, funciona con el Wi-Fi). `bat_k` corrige la tolerancia de las resistencias: se mide el pack con el multímetro y `BAT CAL <voltios>` + `SAVE` (04/11/2026: relación real 4.195).
+- `BAT` y `INFO` dan el voltaje. Mientras se mueve se lee cada 5 ms y al terminar cada movimiento sale `# bateria: min=X V`. Con el pack a 8.0 V en reposo: ~0.6 V de caída en los giros y ~0.36 V al avanzar (04/11/2026).
+
 ### 4.7 Giros con giroscopio
 
 Los giros por tiempo resultaron muy irregulares (±15-25°): dependen de las pilas, de la pendiente del piso y del roce de la rueda con la cinta. Con el MPU6050:

@@ -41,6 +41,7 @@ struct Parametros {
   int t_pulso   = 40;   // ms de cada pulso de corrección (a pwm_giro)
   int kr        = 8;    // PWM por grado de desvío del rumbo al avanzar (0 = no corregir con el giroscopio)
   int imu_signo = 1;    // 1 = chip hacia arriba; -1 si quedó boca abajo (el rumbo crece al revés)
+  int bat_k     = 4000; // V_bat = V_pin * bat_k / 1000 (divisor 6.6k/2.2k = 4.0); lo ajusta BAT CAL <voltios>
 };
 
 struct DefParametro {
@@ -64,4 +65,5 @@ const DefParametro DEF_PARAMETROS[] = {
   {"kp_giro", &Parametros::kp_giro},           {"ki_giro", &Parametros::ki_giro},
   {"t_pulso", &Parametros::t_pulso},
   {"kr", &Parametros::kr},               {"imu_signo", &Parametros::imu_signo},
+  {"bat_k", &Parametros::bat_k},
 };

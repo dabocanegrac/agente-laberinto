@@ -204,6 +204,34 @@ struct Ejecutor {
   bool moviendo() const { return fase != QUIETO; }
 } ej;
 
+// ---------- batería ----------
+// analogReadMilliVolts usa la calibración de fábrica del ADC; bat_k corrige la tolerancia de las resistencias
+// contra el multímetro (BAT CAL). Mientras se mueve se lee cada 5 ms y se guarda el mínimo: las caídas del
+// pack en los arranques y giros, que con las YNDZ son grandes.
+float leerPinBat(int muestras) {
+  uint32_t suma = 0;
+  for (int i = 0; i < muestras; i++) suma += analogReadMilliVolts(PIN_BAT);
+  return (float)suma / muestras;
+}
+
+float voltiosBat(float mvPin) { return mvPin * par.bat_k / 1e6f; }
+
+float batMin = 0;              // mínimo del movimiento en curso o del último
+unsigned long ultimaBat = 0;
+
+void atenderBateria() {
+  static bool moviendoAntes = false;
+  bool moviendo = ej.moviendo();
+  if (moviendo && !moviendoAntes) batMin = 99;
+  if (!moviendo && moviendoAntes) logf("# bateria: min=%.2f V durante el movimiento, ahora %.2f V", batMin,
+                                        voltiosBat(leerPinBat(32)));
+  moviendoAntes = moviendo;
+  if (moviendo && millis() - ultimaBat >= 5) {
+    ultimaBat = millis();
+    batMin = min(batMin, voltiosBat(leerPinBat(4)));
+  }
+}
+
 void terminarMovimiento() {
   frenar();
   ej.entrar(PAUSA, par.pausa);
@@ -796,11 +824,26 @@ void Consola::procesar(char* l) {
       s->printf("OK rumbo=%.1f sesgo=%.1f whoami=0x%02X imu_signo=%d\n", imu::rumbo(), imu::sesgo(),
                 imu::quienSoy(), par.imu_signo);
     }
+  } else if (strcmp(cmd, "BAT") == 0) {
+    float mv = leerPinBat(64);
+    if (arg && strcasecmp(arg, "CAL") == 0) {
+      // BAT CAL <voltios medidos con el multímetro en el plug DC, con el carro quieto>
+      char* v = strtok(nullptr, " ");
+      int k = v && mv > 100 ? (int)lroundf(atof(v) * 1e6f / mv) : 0;
+      if (k < 3000 || k > 5000) {
+        s->printf("ERR uso: BAT CAL <voltios del multímetro> (el pin da %.0f mV; ¿divisor bien conectado?)\n", mv);
+      } else {
+        par.bat_k = k;
+        s->printf("OK bat=%.2fV bat_k=%d (SAVE para guardarlo)\n", voltiosBat(mv), k);
+      }
+    } else {
+      s->printf("OK bat=%.2fV pin=%.0fmV min_mov=%.2fV bat_k=%d\n", voltiosBat(mv), mv, batMin, par.bat_k);
+    }
   } else if (strcmp(cmd, "INFO") == 0) {
     if (hayMapa) s->printf("OK mapa=%dx%d", mapa.filas, mapa.cols);
     else s->print("OK mapa=ninguno");
-    s->printf(" ruta=%d costo_giro=%g fase=%s imu=%s reset=%s uptime=%lus clientes_wifi=%d hotspot=%s\n",
-              hayRuta ? ruta.n : 0, costoGiro, NOMBRE_FASE[ej.fase], imu::ok() ? "ok" : "no",
+    s->printf(" ruta=%d costo_giro=%g fase=%s imu=%s bat=%.2fV reset=%s uptime=%lus clientes_wifi=%d hotspot=%s\n",
+              hayRuta ? ruta.n : 0, costoGiro, NOMBRE_FASE[ej.fase], imu::ok() ? "ok" : "no", voltiosBat(leerPinBat(64)),
               nombreRazon(razonReset), millis() / 1000, WiFi.softAPgetStationNum(),
               WiFi.status() == WL_CONNECTED ? WiFi.localIP().toString().c_str() : "no");
   } else {
@@ -821,7 +864,7 @@ void atenderTcp() {
     consolaTcp = Consola();
     consolaTcp.s = &cliente;
     cliente.printf("# agente-laberinto. reset=%s. Comandos: MAPA ... FIN, PLAN, RUTA, COSTO_GIRO <v>, GO, "
-                   "VOLVER, PASO F|L|R|A, SET <p> <v>, GET, SAVE, SENS [ON|OFF], IMU [ON|OFF|CAL|DIAG], "
+                   "VOLVER, PASO F|L|R|A, SET <p> <v>, GET, SAVE, SENS [ON|OFF], IMU [ON|OFF|CAL|DIAG], BAT [CAL <v>], "
                    "RED [CONECTAR|BORRAR], RED_SSID <nombre>, RED_CLAVE <clave>, INFO, STOP\n",
                    nombreRazon(razonReset));
   }
@@ -874,6 +917,7 @@ void loop() {
   atenderTcp();
   consolaSerial.leer();
   atenderEjecutor();
+  atenderBateria();
   if (imu::seCayo()) logf("# ERR el giroscopio dejó de responder (¿cable suelto?): giros por tiempo");
   uint8_t pwr;
   if (imu::seReinicio(pwr))
