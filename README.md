@@ -20,6 +20,7 @@ agente-laberinto/
 │   ├── planear.py        # python -m pc.planear <mapa> --algo <nombre|all>
 │   ├── enviar.py         # python -m pc.enviar <mapa>: manda el mapa al carro
 │   ├── imprimir.py       # python -m pc.imprimir <mapa>: PDF para el plotter o para armarlo
+│   ├── demo.py + demo/   # python -m pc.demo: interfaz web de la demo (mapa, algoritmos, carro en vivo)
 │   └── tests/            # corren solos con todos los algoritmos y todos los mapas
 ├── resultados/           # tablas de comparación para el informe
 ├── arduino/
@@ -90,6 +91,23 @@ El carro valida el mapa, lo guarda (sobrevive a un reinicio), calcula la ruta y 
 Para calibrar y correr la ruta: `python -m pc.consola` (por Wi-Fi) o `python -m pc.consola --puerto <puerto>` (por cable). Una línea vacía manda `STOP`. Los comandos están en `docs/ARQUITECTURA.md` (4.4) y el paso a paso en `docs/HANDOFF.md`.
 
 **Hotspot del celular (recomendado):** así el PC queda en la misma red que el carro sin perder internet. Se configura una vez con `RED_SSID <nombre>`, `RED_CLAVE <clave>` y `RED CONECTAR` (quedan en la memoria del carro, no en el código). El hotspot tiene que dar 2.4 GHz. El carro mantiene también su red propia de respaldo. `pc.enviar` y `pc.consola` encuentran el carro solos: la última IP conocida (`~/.agente-laberinto-ip`), la red propia o barriendo la subred del hotspot, porque el hotspot de Android no deja pasar mDNS ni broadcast.
+
+### Interfaz de la demo
+
+```
+python -m pc.demo                                      # abre http://localhost:8000
+python -m pc.demo --ip 10.55.105.33                    # sin buscar el carro
+python -m pc.demo --sin-carro                          # solo mapas y algoritmos
+```
+
+Una página en el navegador, sin dependencias ni internet (sirve en el sitio de la demo):
+- **Laberinto:** elegir un mapa de `maps/` (o dejarlo fijo con `?mapa=maps/fisicos/mapa1.txt` en la URL), mandarlo al carro, GO, Volver y STOP (también con la barra espaciadora). El carro se mueve en vivo sobre el mapa con la posición que reporta en cada tramo, y avisa si el carro tiene otro mapa o si su ruta no coincide con la de BFS en Python.
+- **Algoritmos:** ruta, acciones, costo, nodos expandidos y tiempo de cada planificador registrado; tocar una fila dibuja su ruta.
+- **Telemetría:** batería (y la caída de cada movimiento), rumbo del giroscopio, sensores IR y el error del último giro.
+- **Control:** pasos manuales y los parámetros del carro (leer, cambiar con SET, guardar con SAVE).
+- **Log:** todo lo que manda el carro y una caja para escribir comandos.
+
+El carro atiende una conexión a la vez: con la interfaz abierta no se pueden usar `pc.enviar` ni `pc.consola` (y al revés). Desde otro equipo o el celular en la misma red: `http://<ip-del-pc>:8000`.
 
 En el Mac, la terminal necesita el permiso de **Red local** (Ajustes → Privacidad y seguridad). Sin él, Python da `No route to host` aunque `ping` funcione.
 
