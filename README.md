@@ -16,7 +16,8 @@ agente-laberinto/
 ├── pc/                   # Python: referencia de los algoritmos, herramientas y tests
 │   ├── mapa.py           # leer y validar el mapa (grilla de 0/1)
 │   ├── modelo.py         # estado (fila, col, orientación), acciones F/L/R y costos
-│   ├── planners/         # un archivo por algoritmo (bfs.py, ...)
+│   ├── generar.py        # python -m pc.generar: generador de mapas aleatorios válidos
+│   ├── planners/         # un archivo por algoritmo (bfs.py, ucs.py, ...)
 │   ├── planear.py        # python -m pc.planear <mapa> --algo <nombre|all>
 │   ├── enviar.py         # python -m pc.enviar <mapa>: manda el mapa al carro
 │   ├── imprimir.py       # python -m pc.imprimir <mapa>: PDF para el plotter o para armarlo
@@ -70,6 +71,7 @@ Desde la raíz del repo:
 
 ```
 pip install pytest ziglang reportlab
+python -m pc.generar --filas 8 --cols 8 --ciclos 0.15              # genera mapa aleatorio
 python -m pc.planear maps/simulados/ejemplo_5x5.txt              # ruta de BFS
 python -m pc.planear maps/simulados/ejemplo_5x5.txt --algo all   # tabla con todos los algoritmos
 python -m pytest                                                 # tests

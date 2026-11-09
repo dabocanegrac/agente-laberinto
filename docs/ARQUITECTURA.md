@@ -105,6 +105,7 @@ class Planner(ABC):
 Agregar un algoritmo es crear un archivo en `pc/planners/` con un `@registrar class Algo(Planner)`. No hay que tocar nada más.
 
 ```
+python -m pc.generar --filas 8 --cols 8 --ciclos 0.15     # genera un mapa aleatorio válido
 python -m pc.planear maps/fisicos/mapa1.txt --algo all     # tabla comparativa
 python -m pc.enviar maps/fisicos/mapa1.txt                 # manda el mapa al carro (o --puerto COM6)
 python -m pc.imprimir maps/fisicos/mapa1.txt               # PDF para el plotter y plano para armarlo
@@ -114,8 +115,8 @@ python -m pc.imprimir maps/fisicos/mapa1.txt               # PDF para el plotter
 - todos los algoritmos dan rutas válidas, y los que prometen ser óptimos lo son (contra un Dijkstra de referencia);
 - `test_planner_cpp.py` compila el planificador del carro en el PC y exige **la misma ruta, costo y nodos expandidos** que `bfs.py` en todos los mapas, y los mismos errores con mapas malos;
 - `test_enviar.py` prueba el protocolo contra un carro simulado;
-- `test_imprimir.py` verifica que las piezas del PDF cubren exactamente las paredes, sin superponerse.
-
+- `test_imprimir.py` verifica que las piezas del PDF cubren exactamente las paredes, sin superponerse;
+- `test_generar.py` comprueba que los mapas generados son siempre solubles, respetan las propiedades del árbol/ciclos y reproducen semillas.
 ## 4. Firmware (ESP32-S3)
 
 El Arduino IDE solo compila lo que está en la carpeta del sketch y en `src/` (de forma recursiva). Por eso todo el código vive dentro de `agente/src/`.
