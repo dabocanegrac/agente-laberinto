@@ -106,6 +106,7 @@ Agregar un algoritmo es crear un archivo en `pc/planners/` con un `@registrar cl
 
 ```
 python -m pc.planear maps/fisicos/mapa1.txt --algo all     # tabla comparativa
+python -m pc.simulador maps/fisicos/mapa1.txt --algo bfs   # dibuja el mapa y anima la ruta (--texto: en la terminal)
 python -m pc.enviar maps/fisicos/mapa1.txt                 # manda el mapa al carro (o --puerto COM6)
 python -m pc.imprimir maps/fisicos/mapa1.txt               # PDF para el plotter y plano para armarlo
 ```
