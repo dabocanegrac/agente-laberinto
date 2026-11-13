@@ -16,7 +16,7 @@ agente-laberinto/
 ├── pc/                   # Python: referencia de los algoritmos, herramientas y tests
 │   ├── mapa.py           # leer y validar el mapa (grilla de 0/1)
 │   ├── modelo.py         # estado (fila, col, orientación), acciones F/L/R y costos
-│   ├── planners/         # un archivo por algoritmo (bfs.py, ...)
+│   ├── planners/         # un archivo por algoritmo (bfs.py, dfs.py, ...)
 │   ├── planear.py        # python -m pc.planear <mapa> --algo <nombre|all>
 │   ├── enviar.py         # python -m pc.enviar <mapa>: manda el mapa al carro
 │   ├── imprimir.py       # python -m pc.imprimir <mapa>: PDF para el plotter o para armarlo
