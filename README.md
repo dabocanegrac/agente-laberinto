@@ -18,6 +18,7 @@ agente-laberinto/
 │   ├── modelo.py         # estado (fila, col, orientación), acciones F/L/R y costos
 │   ├── planners/         # un archivo por algoritmo (bfs.py, ...)
 │   ├── planear.py        # python -m pc.planear <mapa> --algo <nombre|all>
+│   ├── simulador.py      # python -m pc.simulador <mapa>: dibuja el mapa y anima la ruta
 │   ├── enviar.py         # python -m pc.enviar <mapa>: manda el mapa al carro
 │   ├── imprimir.py       # python -m pc.imprimir <mapa>: PDF para el plotter o para armarlo
 │   └── tests/            # corren solos con todos los algoritmos y todos los mapas
@@ -72,6 +73,8 @@ Desde la raíz del repo:
 pip install pytest ziglang reportlab
 python -m pc.planear maps/simulados/ejemplo_5x5.txt              # ruta de BFS
 python -m pc.planear maps/simulados/ejemplo_5x5.txt --algo all   # tabla con todos los algoritmos
+python -m pc.simulador maps/simulados/ejemplo_5x5.txt            # anima la ruta de BFS (pip install matplotlib)
+python -m pc.simulador maps/simulados/ejemplo_5x5.txt --texto    # lo mismo en la terminal
 python -m pytest                                                 # tests
 ```
 

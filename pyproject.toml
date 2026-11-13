@@ -8,6 +8,7 @@ dependencies = []
 [project.optional-dependencies]
 dev = ["pytest>=8", "ziglang"]   # ziglang: compilador de C++ para test_planner_cpp.py si no hay g++/clang++
 imprimir = ["reportlab"]
+simulador = ["matplotlib"]
 cable = ["pyserial"]
 
 [tool.pytest.ini_options]
