@@ -1,3 +1,21 @@
+% ============================================================================
+% Sección 8: Conclusiones
+% ============================================================================
 \section{Conclusiones}
 \label{sec:conclusiones}
-% Pendiente de desarrollo en Fase 2 (Coordinador).
+
+El diseño, la construcción y la puesta en marcha del proyecto \archivo{agente-laberinto} permitieron contrastar directamente los fundamentos teóricos de la Inteligencia Artificial clásica con las restricciones físicas, eléctricas y temporales de un agente móvil real. A partir del trabajo acumulado en software, firmware, electrónica y pruebas en pista, se destacan las siguientes conclusiones principales:
+
+\begin{enumerate}[leftmargin=1.5em]
+  \item \textbf{La formulación del espacio de estados determina la calidad física del plan:} representar únicamente las coordenadas $(f, c)$ ignora la dinámica de un robot diferencial. Al incluir la orientación en el estado $\estado{f}{c}{o}$ y diferenciar el costo de avanzar ($c_F$) frente al costo de girar ($c_{\text{giro}}$), la búsqueda deja de ser un ejercicio puramente geométrico y pasa a optimizar una magnitud física medible: el tiempo real de recorrido. Asimismo, enriquecer la heurística Manhattan con la penalización por orientación demostró ser admisible y consistente, reduciendo el número de nodos expandidos en A* respecto a BFS sin sacrificar optimalidad.
+
+  \item \textbf{La autonomía real exige blindar la frontera entre deliberación y actuación:} aunque el planificador resuelve el laberinto en fracciones de milisegundo sobre un modelo determinista, la ejecución física ocurre en un entorno estocástico afectado por descarga de baterías, desniveles del piso, inercia y caídas de red. Separar el sistema en capas desacopladas (\emph{Comandos $\rightarrow$ Planificador $\rightarrow$ Ejecutor $\rightarrow$ Movimiento $\rightarrow$ HAL}), ejecutar el giroscopio en una tarea FreeRTOS a \SI{500}{\hertz} y sustituir el bloqueo de red por escritura TCP no bloqueante permitió que el robot completara el laberinto de prueba (6 de 6 recorridos exitosos) aun tras perder por completo la conexión con el PC.
+
+  \item \textbf{Las referencias físicas y la fusión sensorial compensan hardware de bajo costo:} sin \emph{encoders} en las ruedas, el avance puramente por tiempo acumula error de forma inevitable. Dos decisiones de ingeniería hicieron viable el sistema con recursos modestos: (a) el uso del giroscopio MPU6050 con objetivo angular absoluto (y su evolución a control PI de velocidad angular en \archivo{firmware/volver}, reduciendo el error de $\pm 15\text{--}\SI{25}{\degree}$ por tiempo a menos de $\SI{2}{\degree}$ sin pulsos), y (b) la alineación geométrica con el sensor IR frontal contra paredes al final de los tramos rectos, que reinicia periódicamente el error longitudinal.
+
+  \item \textbf{La verificación cruzada Python--C++ evita divergencias silenciosas entre simulación y robot:} diseñar \archivo{src/planner/} sin dependencias de \archivo{Arduino.h} y compilarlo dentro de la batería automatizada de \cmd{pytest} garantizó paridad bit a bit en ruta, costo y nodos expandidos entre el banco de simulación en PC y el firmware del ESP32-S3 (tanto en BFS como en A*). Esta práctica de ingeniería redujo drásticamente el tiempo de depuración sobre el hardware físico y aseguró que las comparaciones del informe reflejen fielmente el comportamiento embarcado.
+
+  \item \textbf{La experimentación temprana revela supuestos invisibles en el papel:} hallazgos como la transparencia infrarroja de la tinta de plotter ante el TCRT5000, los bucles de \emph{brownout} de la batería de \SI{9}{\volt} con Wi-Fi activo, la caída de \SI{2}{\volt} del L298N sobre motores de bajo par y el reinicio silencioso del MPU6050 confirman que en IA aplicada a robótica el entorno físico impone restricciones tan decisivas como el propio algoritmo de búsqueda. La capacidad de recalibrar parámetros en sitio sin recompilar (\cmd{SET}/\cmd{SAVE} en NVS) resultó esencial para adaptarse a cambios de piso, luz y batería.
+\end{enumerate}
+
+En conjunto, el proyecto demuestra que es posible desplegar un agente deliberativo--reactivo completamente autónomo, modular y verificable en un microcontrolador de bajo costo, dejando además una base sólida y extensible para futuras etapas de experimentación final en exteriores y de exploración autónoma en laberintos desconocidos.

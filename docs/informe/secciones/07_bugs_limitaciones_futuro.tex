@@ -1,3 +1,116 @@
+% ============================================================================
+% Sección 7: Bugs Conocidos, Limitaciones y Mejoras Futuras
+% ============================================================================
 \section{Bugs Conocidos, Limitaciones y Mejoras Futuras}
 \label{sec:bugs-futuro}
-% Pendiente de desarrollo en Fase 2 (Coordinador).
+
+Llevar un agente de Inteligencia Artificial desde la simulación en Python hasta un robot físico de bajo costo expuso problemas concretos en la interacción entre electrónica, física óptica, dinámica mecánica y firmware. En esta sección se documentan de manera transparente los \emph{bugs} e incidentes observados durante el desarrollo, las limitaciones estructurales vigentes y el plan priorizado de mitigación y evolución futura~\cite{arquitectura2026doc,handoff2026doc,excel2026organizacion}.
+
+\subsection{Catálogo de bugs conocidos, incidentes observados y mitigaciones}
+\label{subsec:catalogo-bugs}
+
+La \cref{tab:bugs-limitaciones} clasifica por subsistema todos los problemas detectados en pruebas de laboratorio y pista, indicando su causa raíz, el impacto empírico medido y su estado actual de resolución.
+
+\begin{longtable}{@{}p{2.5cm}p{3.6cm}p{3.8cm}p{4.6cm}@{}}
+  \caption{Registro consolidado de bugs, fallos físicos detectados y planes de solución.}
+  \label{tab:bugs-limitaciones} \\
+  \toprule
+  \textbf{Subsistema / Problema} & \textbf{Causa raíz técnica} & \textbf{Impacto observado} & \textbf{Mitigación aplicada o plan de solución} \\
+  \midrule
+  \endfirsthead
+  \toprule
+  \textbf{Subsistema / Problema} & \textbf{Causa raíz técnica} & \textbf{Impacto observado} & \textbf{Mitigación aplicada o plan de solución} \\
+  \midrule
+  \endhead
+  \bottomrule
+  \endfoot
+
+  \textbf{Óptica / Laberinto:} tinta de plotter invisible al IR &
+  Los pigmentos negros de inyección de tinta reflejan la longitud de onda infrarroja ($\approx\SI{950}{\nano\meter}$) del TCRT5000~\cite{vishay2012tcrt5000}. &
+  El 26/10/2026 los sensores leyeron la línea impresa igual que el papel blanco (24--85), impidiendo detectar paredes. &
+  \textbf{Resuelto:} se utiliza el impreso como plantilla y se forran todas las líneas con cinta aislante negra mate ($\approx\SI{1.9}{\centi\meter}$, lecturas 400--690). \\
+  \midrule
+
+  \textbf{Óptica / Exterior:} saturación solar de sensores IR &
+  Sensores montados a $\approx\SI{1.5}{\centi\meter}$ del suelo sin apantallamiento óptico; la radiación IR solar eleva el piso de ruido. &
+  Pérdida de contraste entre blanco y cinta en pruebas a la intemperie (riesgo crítico en demo exterior). &
+  \textbf{Pendiente (\cmd{HW-04}, \cmd{LAB-03}):} bajar los TCRT5000 a 5--\SI{8}{\milli\meter}, instalar faldita opaca de cartón y recalibrar \cmd{umbral} en sitio. \\
+  \midrule
+
+  \textbf{Potencia / Motores:} falta de torque y pitido en giros &
+  Motores N20-10 de 500~RPM (bajo par) alimentados con 4$\times$AA (\SI{6}{\volt}) a través de un L298N que disipa $\approx\SI{2}{\volt}$ en transistores bipolares~\cite{st2000l298n}. &
+  Con \cmd{pwm\_giro} $< 170$ las ruedas no rompen la fricción estática y los motores pitan; el freno en corto del L298N es ineficaz. &
+  \textbf{Mitigado:} freno por contramarcha (\cmd{pwm\_freno}), zona muerta \cmd{pwm\_min} y migración a pack 2S~18650 con compensación por voltaje (\archivo{firmware/volver}). A futuro: driver MOSFET (DRV8833/TB6612) + N20 de 100--200~RPM. \\
+  \midrule
+
+  \textbf{Energía lógica:} bucle de \emph{brownout} en batería de \SI{9}{\volt} &
+  Alta resistencia interna de la batería alcalina de \SI{9}{\volt} ante picos de transmisión Wi-Fi del ESP32-S3. &
+  El 23/10/2026 con \SI{7.67}{\volt} en reposo, el ESP32 entró en reinicio continuo (\cmd{ESP\_RST\_BROWNOUT}, LED TX verde titilando). &
+  \textbf{Mitigado:} reducción de potencia Wi-Fi a \SI{8.5}{dBm}, diagnóstico en \cmd{INFO} + LED rojo de alerta, umbral de cambio en \SI{8.5}{\volt} y batería de repuesto obligatoria. \\
+  \midrule
+
+  \textbf{IMU / Eléctrico:} reinicio silencioso del MPU6050 &
+  Caídas transitorias de tensión durante arranques de motores reinician el chip MPU6050 sin cortar el bus I2C, dejándolo en reposo (\cmd{PWR\_MGMT\_1=0x40}). &
+  Observado el 31/10/2026: el giroscopio devuelve 0 constante y el rumbo deriva artificialmente a $-b_z/65.5\;\si{\degree\per\second}$. &
+  \textbf{Resuelto en \archivo{firmware/volver}:} vigilancia periódica de \cmd{PWR\_MGMT\_1} cada $\approx\SI{50}{\milli\second}$ con reconfiguración automática y diagnóstico \cmd{IMU DIAG}. \\
+  \midrule
+
+  \textbf{Firmware / Red:} bloqueo de \cmd{loop()} al caer Wi-Fi &
+  \cmd{NetworkClient::write} reintenta bloqueando hasta $10\times\SI{1}{\second}$ si el cliente TCP desaparece sin cerrar el socket. &
+  Al perderse el Wi-Fi en pleno \cmd{GO}, el ejecutor se congelaba con los motores encendidos sacando al carro de pista. &
+  \textbf{Resuelto en \archivo{main}:} verificación previa con \cmd{select()} de timeout cero y envío con \cmd{MSG\_DONTWAIT}, más reemplazo automático de sockets muertos. \\
+  \midrule
+
+  \textbf{Mecánica / Pista:} roce con cinta, pendiente y portapilas &
+  Borde de la cinta aislante frena la llanta durante giros en el eje; desnivel del suelo acelera de bajada; portapilas sin fijación rígida. &
+  El 26/10/2026 el portapilas se desprendió cortando la energía; la pendiente generó derivas de 4--\SI{6}{\degree} y exceso de frenado; el roce forzó pulsos extra. &
+  \textbf{Mitigado:} aseguramiento mecánico del portapilas, aproximación lenta (\cmd{pwm\_aprox}), calibración en dirección de bajada y control PI de velocidad angular en \archivo{firmware/volver}. \\
+  \midrule
+
+  \textbf{Búsqueda / Modelado:} desajuste de \cmd{COSTO\_GIRO} &
+  El valor por defecto \cmd{COSTO\_GIRO = 0.5} se fijó inicialmente a partir de estimaciones preliminares ($400/800\;\si{\milli\second}$). &
+  En pista un giro tarda 1.0--\SI{1.5}{\second} y una celda 0.6--\SI{0.8}{\second} ($c_{\text{giro}} \approx 1.5\text{--}2.0$), subestimando el costo real de girar en UCS/A*. &
+  \textbf{Pendiente (\archivo{docs/HANDOFF.md}):} actualizar el valor por defecto en \archivo{pc/modelo.py} y el firmware con los tiempos medidos sobre la configuración definitiva de celda de \SI{24}{\centi\meter}. \\
+  \midrule
+
+  \textbf{Firmware / Validación:} pruebas parciales de robustez &
+  La detección de movimiento durante calibración IMU (\cmd{RUIDO\_MAX\_CAL=25}) y el comando \cmd{ALGO astar} a bordo aún no completan todas las pruebas en hardware real. &
+  Riesgo de falsos rechazos o de comportamiento no verificado en pista antes de la demo. &
+  \textbf{Pendiente:} validar explícitamente el rechazo por movimiento en \cmd{GO} y ejecutar pruebas de extremo a extremo con \cmd{pc.enviar --algo astar} en el carro real. \\
+\end{longtable}
+
+\subsection{Limitaciones estructurales del sistema actual}
+\label{subsec:limitaciones}
+
+Más allá de los fallos puntuales ya mitigados, el diseño actual presenta cuatro limitaciones inherentes a las decisiones de alcance y presupuesto del curso:
+
+\begin{enumerate}[leftmargin=1.5em]
+  \item \textbf{Mapa conocido a priori (sin exploración autónoma):} el agente no percibe paredes a distancia ni construye el mapa en tiempo real; requiere recibir el archivo de grilla antes de planear. Si una pared física difiere del mapa cargado, el robot no replanifica (en \archivo{firmware/volver}, la bandera \cmd{perdido=1} detiene la marcha con \cmd{ERR} si no aparece una pared esperada).
+  \item \textbf{Ausencia de \emph{encoders} en las ruedas:} la distancia recorrida en tramos sin pared frontal depende de integración temporal (\cmd{t\_celda}) compensada por voltaje. En intersecciones abiertas consecutivas sin paredes de referencia (como el reto deliberado de \archivo{mapa2.txt}), los errores longitudinales pueden acumularse ligeramente.
+  \item \textbf{Sensibilidad a condiciones ambientales externas:} los sensores ópticos reflectivos dependen de la reflectancia IR de la superficie y de la luz ambiente, por lo que cambiar de recinto exige una recalibración de \cmd{umbral}, \cmd{t\_celda} y \cmd{t\_alinear} ($\approx\SI{10}{\minute}$).
+  \item \textbf{Límite estático de mapa ($16\times 16$ celdas):} el firmware reserva arreglos fijos para \cmd{MAX\_FILAS = MAX\_COLS = 16} ($1024$ estados). Aunque es ampliamente suficiente para laberintos físicos de demostración ($\le 4\times 4$), escenarios mayores requerirían ampliar la reserva estática o aprovechar los \SI{8}{\mega\byte} de OPI PSRAM disponibles en el ESP32-S3.
+\end{enumerate}
+
+\subsection{Plan de mejoras futuras}
+\label{subsec:mejoras-futuras}
+
+Con base en las lecciones técnicas recogidas y las líneas de extensión planteadas por el equipo en el libro de organización~\cite{excel2026organizacion}, se propone una hoja de ruta escalonada en tres horizontes:
+
+\begin{itemize}[leftmargin=1.5em]
+  \item \textbf{Corto plazo (pre-demo y consolidación de ramas):}
+    \begin{itemize}
+      \item Finalizar la integración (PRs hacia \archivo{main}) de \cmd{ucs}, \cmd{astar}, \cmd{greedy}, \cmd{dfs}, \archivo{firmware/astar}, \archivo{firmware/volver} y \archivo{pc/demo.py}.
+      \item Ejecutar \cmd{HW-04} (bajar sensores a 5--\SI{8}{\milli\meter} + faldita opaca), corregir el roce mecánico de las ruedas con la cinta y fijar \cmd{COSTO\_GIRO} con los tiempos reales medidos.
+      \item Optimizar la secuencia de media vuelta (\cmd{R R} o \cmd{L L}) en el ejecutor para ejecutar un único giro continuo de \SI{180}{\degree} sin frenada intermedia, conservando intacto el contrato de ruta.
+    \end{itemize}
+  \item \textbf{Mediano plazo (mejora electromecánica y odometría cerrada):}
+    \begin{itemize}
+      \item Reemplazar el L298N por un driver MOSFET de baja caída (\textbf{DRV8833} o \textbf{TB6612FNG}, $v_{\text{caida}} \approx \SI{0.3}{\volt}$) y sustituir los N20 de 500~RPM por motorreductores N20 de \textbf{100--200~RPM con \emph{encoders} magnéticos en cuadratura}. Esto cerraría el lazo de posición longitudinal por distancia real (en \si{\milli\meter}) en lugar de tiempo.
+      \item Unificar la alimentación en un único pack 2S~18650 con convertidor \emph{buck} regulado de \SI{5}{\volt} y filtrado LC para la lógica, eliminando por completo la batería descartable de \SI{9}{\volt}.
+    \end{itemize}
+  \item \textbf{Largo plazo (autonomía en entornos desconocidos):}
+    \begin{itemize}
+      \item \textbf{Exploración online y replanificación:} incorporar sensores de distancia laterales/frontales (ultrasónicos o láser ToF VL53L0X) para levantar paredes en tiempo real sobre una máscara de bits ampliada (4 bits de pared + bit de celda explorada) e implementar algoritmos de exploración como \emph{Flood Fill} o \emph{D* Lite}~\cite{russell2021aima,siegwart2011autonomous}.
+      \item \textbf{Visión artificial con cámara de celular:} tal como se propuso en las notas de próximos pasos del equipo~\cite{excel2026organizacion}, emplear una cámara cenital (teléfono móvil) para detectar automáticamente la matriz del laberinto físico mediante visión por computador y enviar la grilla generada al robot vía Wi-Fi sin transcripción manual.
+    \end{itemize}
+\end{itemize}
