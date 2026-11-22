@@ -25,17 +25,17 @@ La \cref{tab:escenarios-eval} resume los siete escenarios definidos en el reposi
   \caption{Escenarios de evaluación definidos para simulación y pista física.}
   \label{tab:escenarios-eval}
   \footnotesize
-  \begin{tabularx}{\textwidth}{@{}llccX@{}}
+  \begin{tabularx}{\textwidth}{@{}p{2.9cm}p{2.8cm}ccX@{}}
     \toprule
-    \textbf{Escenario} & \textbf{Origen / Estado} & \textbf{Tamaño} & \textbf{Celda física} & \textbf{Propósito experimental} \\
+    \textbf{Escenario} & \textbf{Origen / Estado} & \textbf{Tamaño} & \textbf{Celda} & \textbf{Propósito experimental} \\
     \midrule
-    \archivo{prueba\_4x4.txt} & \archivo{main} \badgeok & $4\times 4$ & \SI{22}{\centi\meter} & Prototipo impreso ($91\times\SI{91}{\centi\meter}$) forrado en cinta; validación inicial de autonomía y giros con IMU. \\
-    \archivo{ejemplo\_5x5.txt} & \archivo{main} \badgeok & $5\times 5$ & Simulado & Mapa de referencia en pruebas unitarias y verificación de paridad Python--C++. \\
-    \archivo{mapa1.txt} & \archivo{mapas/mapa1} \badgepr & $4\times 3$ & \SI{24}{\centi\meter} & Mapa físico 1 de demo ($84\times\SI{108}{\centi\meter}$ con margen); tramos rectos rematados por paredes para alineación frontal. \\
-    \archivo{mapa2.txt} & \archivo{mapas/mapa2} \badgepr & $4\times 3$ & \SI{24}{\centi\meter} & Mapa físico 2: incluye intersección abierta donde la ruta óptima obliga a girar aun con paso libre al frente. \\
-    \archivo{simulado\_6x6.txt} & \archivo{mapas/SW-05} \badgepr & $6\times 6$ & Simulado & Laberinto aleatorio con ciclos (\cmd{ciclos=0.2}, \cmd{semilla=106}); múltiples rutas competitivas. \\
-    \archivo{simulado\_10x10.txt} & \archivo{mapas/SW-05} \badgepr & $10\times 10$ & Simulado & Escalamiento intermedio (\cmd{ciclos=0.2}, \cmd{semilla=38}); contraste claro de nodos expandidos. \\
-    \archivo{simulado\_16x16.txt} & \archivo{mapas/SW-05} \badgepr & $16\times 16$ & Simulado & Límite máximo del ESP32-S3 (\cmd{MAX\_ESTADOS=1024}, \cmd{ciclos=0.2}, \cmd{semilla=23}); prueba de esfuerzo temporal y de memoria. \\
+    \archivo{prueba\_4x4.txt} & \archivo{main} (\textcolor{unalverde}{\textbf{ok}}) & $4\times 4$ & \SI{22}{\centi\meter} & Prototipo impreso ($91\times\SI{91}{\centi\meter}$) forrado en cinta; validación inicial de autonomía y giros con IMU. \\
+    \archivo{ejemplo\_5x5.txt} & \archivo{main} (\textcolor{unalverde}{\textbf{ok}}) & $5\times 5$ & Sim. & Mapa de referencia en pruebas unitarias y verificación de paridad Python--C++. \\
+    \archivo{mapa1.txt} & \archivo{mapas/mapa1} (\textcolor{azulclaro}{\textbf{PR}}) & $4\times 3$ & \SI{24}{\centi\meter} & Mapa físico 1 de demo ($84\times\SI{108}{\centi\meter}$ con margen); tramos rectos rematados por paredes para alineación frontal. \\
+    \archivo{mapa2.txt} & \archivo{mapas/mapa2} (\textcolor{azulclaro}{\textbf{PR}}) & $4\times 3$ & \SI{24}{\centi\meter} & Mapa físico 2: incluye intersección abierta donde la ruta óptima obliga a girar aun con paso libre al frente. \\
+    \archivo{simulado\_6x6.txt} & \archivo{mapas/SW-05} (\textcolor{azulclaro}{\textbf{PR}}) & $6\times 6$ & Sim. & Laberinto aleatorio con ciclos (\cmd{ciclos=0.2}, \cmd{semilla=106}); múltiples rutas competitivas. \\
+    \archivo{simulado\_10x10.txt} & \archivo{mapas/SW-05} (\textcolor{azulclaro}{\textbf{PR}}) & $10\times 10$ & Sim. & Escalamiento intermedio (\cmd{ciclos=0.2}, \cmd{semilla=38}); contraste claro de nodos expandidos. \\
+    \archivo{simulado\_16x16.txt} & \archivo{mapas/SW-05} (\textcolor{azulclaro}{\textbf{PR}}) & $16\times 16$ & Sim. & Límite máximo del ESP32-S3 (\cmd{MAX\_ESTADOS=1024}, \cmd{ciclos=0.2}, \cmd{semilla=23}); prueba de esfuerzo temporal y de memoria. \\
     \bottomrule
   \end{tabularx}
 \end{table}
@@ -68,15 +68,15 @@ La \cref{tab:resultados-pista-prelim} resume los hitos empíricos verificados en
   \caption{Resultados preliminares verificados en el robot físico.}
   \label{tab:resultados-pista-prelim}
   \footnotesize
-  \begin{tabularx}{\textwidth}{@{}llcX@{}}
+  \begin{tabularx}{\textwidth}{@{}p{3.0cm}p{3.2cm}p{2.8cm}X@{}}
     \toprule
     \textbf{Prueba / Fecha} & \textbf{Configuración} & \textbf{Resultado clave} & \textbf{Observaciones técnicas} \\
     \midrule
-    Recorrido completo en \archivo{prueba\_4x4} (26/10/2026)~\badgeok & 4$\times$AA + 9\,V, celda \SI{22}{\centi\meter}, cinta aislante, BFS a bordo, PWM fijo + IMU & \textbf{6/6 en meta} ($\approx\SI{14}{\second}$) & Ruta de 18 acciones (12 \cmd{F}, 6 giros). Error de giro $\pm\SI{4}{\degree}$ con 0--4 pulsos; piso con leve pendiente hacia el sur compensada con \cmd{pwm\_aprox=140} y \cmd{t\_alinear=0}. \\
-    Blindaje de red en \cmd{GO} (27/10/2026)~\badgeok & Desconexión intencional del Wi-Fi del PC a mitad de recorrido & \textbf{100\,\% autónomo} & El carro completó el laberinto sin bloquear \cmd{loop()} gracias a la escritura TCP no bloqueante (\cmd{select} + \cmd{MSG\_DONTWAIT}). \\
-    Deriva estática del MPU6050 (26/10/2026)~\badgeok & Tarea FreeRTOS \SI{500}{\hertz}, DLPF \SI{44}{\hertz}, carro quieto & $\approx\SI{0.2}{\degree}$ en \SI{48}{\second} & Ruido en reposo $\approx 2$ unidades crudas (muy por debajo del umbral de rechazo \cmd{RUIDO\_MAX\_CAL=25}). \\
-    Control PI de giros (31/10/2026)~\badgepr & Pack 2S 18650, \archivo{firmware/volver}, \cmd{antic=2}, 4~R + 4~L & \textbf{R $+0.6^\circ\pm 1.9^\circ$}, \textbf{L $-1.5^\circ\pm 0.5^\circ$} & \textbf{0 pulsos correctivos} requeridos; elimina la dispersión de 6--\SI{39}{\degree} observada con PWM fijo al caer el pack. \\
-    Caída de voltaje bajo carga (04/11/2026)~\badgepr & Pack 2S 18650 (\SI{8.0}{\volt} reposo), divisor GPIO~1 (\cmd{bat\_k} cal. 4.195) & $\Delta V \approx \SI{0.60}{\volt}$ (giro), $\SI{0.36}{\volt}$ (avance) & Justifica el filtrado de $V_{\text{bat}}$ ($\tau\approx\SI{1}{\second}$) en la compensación de PWM para no realimentar picos transitorios. \\
+    Recorrido \archivo{prueba\_4x4} (26/10/2026) & 4$\times$AA + 9\,V, celda \SI{22}{\centi\meter}, cinta aislante, BFS a bordo, PWM fijo + IMU & \textbf{6/6 en meta} ($\approx\SI{14}{\second}$) & Ruta de 18 acciones (12 \cmd{F}, 6 giros). Error de giro $\pm\SI{4}{\degree}$ con 0--4 pulsos; piso con leve pendiente compensada con \cmd{pwm\_aprox=140} y \cmd{t\_alinear=0}. \\
+    Blindaje de red en \cmd{GO} (27/10/2026) & Desconexión intencional del Wi-Fi del PC a mitad de recorrido & \textbf{100\,\% autónomo} & Completó el laberinto sin bloquear \cmd{loop()} gracias a la escritura TCP no bloqueante (\cmd{select} + \cmd{MSG\_DONTWAIT}). \\
+    Deriva estática MPU6050 (26/10/2026) & Tarea FreeRTOS \SI{500}{\hertz}, DLPF \SI{44}{\hertz}, carro quieto & $\approx\SI{0.2}{\degree}$ en \SI{48}{\second} & Ruido en reposo $\approx 2$ unidades crudas (muy por debajo del umbral de rechazo \cmd{RUIDO\_MAX\_CAL=25}). \\
+    Control PI de giros (31/10/2026, PR) & Pack 2S 18650, \archivo{firmware/volver}, \cmd{antic=2}, 4~R + 4~L & \textbf{R $+0.6^\circ\pm 1.9^\circ$}, \textbf{L $-1.5^\circ\pm 0.5^\circ$} & \textbf{0 pulsos correctivos} requeridos; elimina la dispersión de 6--\SI{39}{\degree} observada con PWM fijo al caer el pack. \\
+    Caída de voltaje (04/11/2026, PR) & Pack 2S 18650 (\SI{8.0}{\volt} reposo), divisor GPIO~1 (\cmd{bat\_k} 4.195) & $\Delta V \approx \SI{0.60}{\volt}$ (giro), $\SI{0.36}{\volt}$ (avance) & Justifica el filtrado de $V_{\text{bat}}$ ($\tau\approx\SI{1}{\second}$) en la compensación de PWM para no realimentar picos transitorios. \\
     \bottomrule
   \end{tabularx}
 \end{table}

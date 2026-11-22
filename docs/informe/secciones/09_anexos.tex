@@ -60,24 +60,24 @@ El firmware expone el mismo protocolo textual orientado a líneas por USB-Serial
   \caption{Catálogo completo de comandos del firmware \archivo{arduino/agente}.}
   \label{tab:anexo-comandos}
   \footnotesize
-  \begin{tabularx}{\textwidth}{@{}lXc@{}}
+  \begin{tabularx}{\textwidth}{@{}p{3.9cm}Xp{2.3cm}@{}}
     \toprule
     \textbf{Comando} & \textbf{Descripción y comportamiento} & \textbf{Estado} \\
     \midrule
-    \cmd{MAPA} \dots{} \cmd{FIN} & Recibe el mapa línea por línea, lo valida, lo guarda en NVS y calcula la ruta. & \badgeok \\
-    \cmd{PLAN} / \cmd{RUTA} & Recalcula la ruta sobre el mapa guardado / imprime la última ruta calculada. & \badgeok \\
-    \cmd{COSTO\_GIRO <v>} & Fija el peso relativo de \cmd{L}/\cmd{R} en NVS y replanifica automáticamente. & \badgeok \\
-    \cmd{GO} & Calibra el giroscopio (carro quieto) y ejecuta la ruta completa de forma autónoma. & \badgeok \\
-    \cmd{PASO F [n]|L|R|A} & Ejecuta una primitiva aislada (\cmd{A}: avanzar hasta línea frontal y alinear). & \badgeok \\
-    \cmd{SET <p> <v>} / \cmd{GET} / \cmd{SAVE} & Modifica en vivo, consulta o persiste en NVS los parámetros de \archivo{parametros.h}. & \badgeok \\
-    \cmd{SENS [ON|OFF]} & Lee los 3 TCRT5000 (0--1000) o activa/desactiva el muestreo continuo cada \SI{200}{\milli\second}. & \badgeok \\
-    \cmd{IMU [ON|OFF|CAL]} & Reporta rumbo/sesgo, streaming continuo o recalibra sesgo con verificación de quietud. & \badgeok \\
-    \cmd{RED\_SSID} / \cmd{RED\_CLAVE} / \cmd{RED} & Configura credenciales de hotspot en NVS y gestiona conexión (\cmd{CONECTAR}/\cmd{BORRAR}). & \badgeok \\
-    \cmd{INFO} / \cmd{STOP} & Reporta estado general (mapa, fase, IMU, causa de reset, IP) / parada de emergencia. & \badgeok \\
+    \cmd{MAPA} \dots{} \cmd{FIN} & Recibe el mapa línea por línea, lo valida, lo guarda en NVS y calcula la ruta. & \textcolor{unalverde}{\textbf{Validado}} \\
+    \cmd{PLAN} / \cmd{RUTA} & Recalcula la ruta sobre el mapa guardado / imprime la última ruta calculada. & \textcolor{unalverde}{\textbf{Validado}} \\
+    \cmd{COSTO\_GIRO <v>} & Fija el peso relativo de \cmd{L}/\cmd{R} en NVS y replanifica automáticamente. & \textcolor{unalverde}{\textbf{Validado}} \\
+    \cmd{GO} & Calibra el giroscopio (carro quieto) y ejecuta la ruta completa de forma autónoma. & \textcolor{unalverde}{\textbf{Validado}} \\
+    \cmd{PASO F [n]|L|R|A} & Ejecuta una primitiva aislada (\cmd{A}: avanzar hasta línea frontal y alinear). & \textcolor{unalverde}{\textbf{Validado}} \\
+    \cmd{SET <p> <v>} / \cmd{GET} / \cmd{SAVE} & Modifica en vivo, consulta o persiste en NVS los parámetros de \archivo{parametros.h}. & \textcolor{unalverde}{\textbf{Validado}} \\
+    \cmd{SENS [ON|OFF]} & Lee los 3 TCRT5000 (0--1000) o activa/desactiva el muestreo continuo cada \SI{200}{\milli\second}. & \textcolor{unalverde}{\textbf{Validado}} \\
+    \cmd{IMU [ON|OFF|CAL]} & Reporta rumbo/sesgo, streaming continuo o recalibra sesgo con verificación de quietud. & \textcolor{unalverde}{\textbf{Validado}} \\
+    \cmd{RED\_SSID} / \cmd{RED\_CLAVE} / \cmd{RED} & Configura credenciales de hotspot en NVS y gestiona conexión (\cmd{CONECTAR}/\cmd{BORRAR}). & \textcolor{unalverde}{\textbf{Validado}} \\
+    \cmd{INFO} / \cmd{STOP} & Reporta estado general (mapa, fase, IMU, causa de reset, IP) / parada de emergencia. & \textcolor{unalverde}{\textbf{Validado}} \\
     \midrule
-    \cmd{ALGO [bfs|astar]} & Selecciona y persiste el algoritmo embarcado (\archivo{origin/firmware/astar}). & \badgepr \\
-    \cmd{BAT} / \cmd{BAT CAL <V>} & Lee voltaje del pack 2S, factor de compensación PWM y calibra \cmd{bat\_k} (\archivo{firmware/volver}). & \badgepr \\
-    \cmd{IMU DIAG} / \cmd{VOLVER} & Diagnóstico de reinicios I2C del MPU6050 / retorno automático al inicio (\archivo{firmware/volver}). & \badgepr \\
+    \cmd{ALGO [bfs|astar]} & Selecciona y persiste el algoritmo embarcado (\archivo{origin/firmware/astar}). & \textcolor{azulclaro}{\textbf{En rama / PR}} \\
+    \cmd{BAT} / \cmd{BAT CAL <V>} & Lee voltaje del pack 2S, factor de compensación PWM y calibra \cmd{bat\_k} (\archivo{firmware/volver}). & \textcolor{azulclaro}{\textbf{En rama / PR}} \\
+    \cmd{IMU DIAG} / \cmd{VOLVER} & Diagnóstico de reinicios I2C del MPU6050 / retorno automático al inicio (\archivo{firmware/volver}). & \textcolor{azulclaro}{\textbf{En rama / PR}} \\
     \bottomrule
   \end{tabularx}
 \end{table}
@@ -125,20 +125,20 @@ Para distribuir el desarrollo de forma paralela mediante Pull Requests independi
   \caption{Paquetes de trabajo del proyecto según \archivo{Organizacion\_Agente\_Laberinto.xlsx} y estado en el repositorio.}
   \label{tab:anexo-paquetes}
   \footnotesize
-  \begin{tabularx}{\textwidth}{@{}llXll@{}}
+  \begin{tabularx}{\textwidth}{@{}p{2.5cm}p{1.9cm}Xp{1.8cm}p{2.2cm}@{}}
     \toprule
-    \textbf{ID} & \textbf{Área} & \textbf{Entregable principal} & \textbf{Responsable} & \textbf{Estado repo} \\
+    \textbf{ID} & \textbf{Área} & \textbf{Entregable principal} & \textbf{Resp.} & \textbf{Estado repo} \\
     \midrule
-    \cmd{GEN-01}, \cmd{HW-01..03} & Hardware & Repositorio, compra, ensamble, pruebas Wi-Fi/OTA y control remoto & Daniel B. & \badgeok \\
-    \cmd{SW-01}, \cmd{SW-03}, \cmd{LAB-00/02} & Firmware / PC & Grilla 0/1, BFS Python y C++, \archivo{enviar.py}, \archivo{imprimir.py}, \texttt{DEC-02} & Daniel B. & \badgeok \\
-    \cmd{HW-05} & Firmware & Ejecutor autónomo, MPU6050, blindaje TCP y hotspot (PR~\#5) & Daniel B. & \badgeok \\
-    \cmd{SW-05} & Software PC & Paquete~2: planificador \textbf{UCS} y generador \archivo{pc/generar.py} & Daniel Ch. & \badgepr \\
-    \cmd{SW-06}, \cmd{SW-07} & PC / Firmware & Paquete~3: \textbf{A*} Python, \archivo{pc/comparar.py} y \textbf{A*} C++ a bordo & Angel P. & \badgepr \\
-    \cmd{LAB-01/06}, \cmd{SW-02} & Laberinto / PC & Paquete~4: diseños \archivo{mapa1}/\archivo{mapa2} y planificador \textbf{Greedy} & Sara R. & \badgepr \\
-    \cmd{SW-04} & Software PC & Paquete~1: planificador \textbf{DFS} y simulador animado \archivo{pc/simulador.py} & Vanessa R. & \badgepend \\
-    \cmd{HW-04}, \cmd{LAB-03/04} & Hardware / Pista & Bajar sensores + faldita, prueba solar y armado de laberinto final & Equipo & \badgepend \\
-    \cmd{INT-01..03} & Integración & Recorridos 3/3 en \archivo{mapa1}, ensayo exterior y cronometraje comparativo & Equipo & \badgepend \\
-    \cmd{REP-01..04} & Documentación & Informe técnico completo en LaTeX (\archivo{docs/informe/}) y PDF final & Daniel Ch. & En curso \\
+    \cmd{GEN-01}, \cmd{HW-01..03} & Hardware & Repositorio, compra, ensamble, pruebas Wi-Fi/OTA y control remoto & Daniel B. & \textcolor{unalverde}{\textbf{Validado}} \\
+    \cmd{SW-01}, \cmd{SW-03}, \cmd{LAB-00/02} & Firmware / PC & Grilla 0/1, BFS Python y C++, \archivo{enviar.py}, \archivo{imprimir.py}, \texttt{DEC-02} & Daniel B. & \textcolor{unalverde}{\textbf{Validado}} \\
+    \cmd{HW-05} & Firmware & Ejecutor autónomo, MPU6050, blindaje TCP y hotspot (PR~\#5) & Daniel B. & \textcolor{unalverde}{\textbf{Validado}} \\
+    \cmd{SW-05} & Software PC & Paquete~2: planificador \textbf{UCS} y generador \archivo{pc/generar.py} & Daniel Ch. & \textcolor{azulclaro}{\textbf{En rama / PR}} \\
+    \cmd{SW-06}, \cmd{SW-07} & PC / Firmware & Paquete~3: \textbf{A*} Python, \archivo{pc/comparar.py} y \textbf{A*} C++ a bordo & Angel P. & \textcolor{azulclaro}{\textbf{En rama / PR}} \\
+    \cmd{LAB-01/06}, \cmd{SW-02} & Laberinto / PC & Paquete~4: diseños \archivo{mapa1}/\archivo{mapa2} y planificador \textbf{Greedy} & Sara R. & \textcolor{azulclaro}{\textbf{En rama / PR}} \\
+    \cmd{SW-04} & Software PC & Paquete~1: planificador \textbf{DFS} y simulador animado \archivo{pc/simulador.py} & Vanessa R. & \textcolor{ambarborde}{\textbf{Pendiente}} \\
+    \cmd{HW-04}, \cmd{LAB-03/04} & Hardware / Pista & Bajar sensores + faldita, prueba solar y armado de laberinto final & Equipo & \textcolor{ambarborde}{\textbf{Pendiente}} \\
+    \cmd{INT-01..03} & Integración & Recorridos 3/3 en \archivo{mapa1}, ensayo exterior y cronometraje comparativo & Equipo & \textcolor{ambarborde}{\textbf{Pendiente}} \\
+    \cmd{REP-01..04} & Documentación & Informe técnico completo en LaTeX (\archivo{docs/informe/}) y PDF final & Daniel Ch. & \textcolor{azuldoc}{\textbf{En curso}} \\
     \bottomrule
   \end{tabularx}
 \end{table}
