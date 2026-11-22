@@ -1,3 +1,134 @@
 \section{Descripción del Sistema y Definición del Agente (IA)}
 \label{sec:sistema-agente}
-% Pendiente de desarrollo por Worktree Hijo 1 (docs-sec1-4-sistema-entorno).
+
+\subsection{Propósito del sistema y visión general}
+\label{subsec:proposito-vision}
+
+El proyecto \texttt{agente-laberinto} \cite{repo2026agentelaberinto} implementa un agente robótico móvil autónomo capaz de resolver laberintos bidimensionales impresos o trazados sobre una superficie plana. Dado un mapa conocido a priori que especifica la topología de paredes, el estado inicial \estado{f_0}{c_0}{o_0} y la celda objetivo $(f_g, c_g)$, el robot calcula la secuencia óptima de movimientos relativos (\cmd{F}: avanzar una celda; \cmd{L}/\cmd{R}: girar \SI{90}{\degree} a la izquierda o a la derecha) y la ejecuta físicamente en una plataforma diferencial de dos ruedas motrices (2WD) sin codificadores (\textit{encoders}) en los ejes.
+
+El sistema adopta un ciclo clásico de inteligencia artificial embebida ---\textbf{percibir $\rightarrow$ planear $\rightarrow$ actuar}--- ejecutado íntegramente dentro del microcontrolador del vehículo \cite{arquitectura2026doc}. A diferencia de los esquemas teleoperados donde un computador central calcula la trayectoria y transmite comandos paso a paso, el computador personal (PC) cumple exclusivamente funciones de referencia algorítmica, simulación, generación/impresión de pistas, calibración y transferencia inicial del mapa. Este documento describe el estado integral del sistema, diferenciando explícitamente entre los componentes ya integrados y validados en pista sobre la rama \texttt{main} (\badgeok), los desarrollos implementados en ramas de trabajo activas en proceso de integración (\badgepr) y las extensiones proyectadas (\badgepend).
+
+\begin{decision}{DEC-05: Planificación y ejecución autónoma a bordo \badgeok}
+Se evaluaron dos arquitecturas de control: (a) \textit{planificación en PC y telemetría continua}, donde el computador envía cada comando de movimiento por Wi-Fi; y (b) \textit{autonomía total a bordo}, donde el PC transfiere el archivo de mapa una única vez y verifica la paridad de la ruta devuelta. Se eligió la opción (b) porque garantiza que el agente siga operando incluso ante pérdida total de conectividad Wi-Fi tras el comando \cmd{GO}. Esta propiedad fue verificada empíricamente el 27/10/2026 desconectando la interfaz inalámbrica del PC a mitad de recorrido sin afectar la llegada a la meta \cite{arquitectura2026doc}.
+\end{decision}
+
+\begin{decision}{DEC-06: Selección del microcontrolador ESP32-S3 N16R8 \badgeok}
+Se seleccionó la placa de desarrollo ESP32-S3 N16R8 (\SI{16}{MB} de memoria Flash, \SI{8}{MB} de PSRAM OPI y procesador Xtensa LX7 de doble núcleo hasta \SI{240}{MHz}) \cite{espressif2024esp32s3} frente a alternativas de 8 bits (Arduino Uno/Mega) o placas sin radio integrada. Las razones técnicas determinantes fueron: (1) disponibilidad simultánea de Wi-Fi para consola TCP y actualizaciones inalámbricas (OTA), (2) abundante SRAM estática para alojar estructuras de búsqueda como $A^*$ ($\sim\SI{60}{KB}$) sin desbordar la pila, (3) múltiples canales ADC1 independientes del Wi-Fi para los sensores ópticos y de batería, y (4) soporte de FreeRTOS para aislar la integración del giroscopio en una tarea dedicada a \SI{500}{Hz} \cite{arquitectura2026doc}.
+\end{decision}
+
+\subsection{Definición formal del agente mediante el marco PEAS}
+\label{subsec:peas}
+
+Siguiendo la formulación estándar de agentes racionales en Russell y Norvig \cite{russell2021aima}, la \cref{tab:peas} especifica la medida de rendimiento, el entorno, los actuadores y los sensores (\textit{PEAS}) del agente tanto en su línea base (\texttt{main} \badgeok) como en las extensiones de las ramas activas (\badgepr).
+
+\begin{table}[H]
+\centering
+\caption{Especificación formal del agente según el marco PEAS.}
+\label{tab:peas}
+\small
+\begin{tabularx}{\textwidth}{@{}p{2.7cm}X@{}}
+\toprule
+\textbf{Componente} & \textbf{Descripción técnica y estado de integración} \\
+\midrule
+\textbf{Rendimiento (Performance)} &
+\begin{itemize}[leftmargin=1.2em,nosep]
+  \item Alcanzar la celda meta $(f_g, c_g)$ desde \estado{f_0}{c_0}{o_0} sin colisionar ni cruzar líneas de pared \badgeok.
+  \item Minimizar el número de acciones discretas ($|\pi|$) con BFS \badgeok, o el costo temporal ponderado $J(\pi) = \sum c(a_i)$ con UCS en PC \badgeok{} y $A^*$ en PC \badgeok{} / a bordo (\texttt{firmware/astar} \badgepr).
+  \item Precisión angular de giros ($\pm\SI{4}{\degree}$ en \texttt{main} \badgeok; $+0.6^\circ \pm 1.9^\circ$ / $-1.5^\circ \pm 0.5^\circ$ con control PI en \texttt{firmware/volver} \badgepr) y tiempo total de recorrido ($\sim\SI{14}{s}$ en \archivo{prueba\_4x4.txt} \badgeok).
+  \item Restricción de seguridad: límite temporal (\textit{timeout}) de \SI{90}{s} por ejecución \badgeok.
+\end{itemize} \\
+\midrule
+\textbf{Entorno (Environment)} &
+\begin{itemize}[leftmargin=1.2em,nosep]
+  \item Pista física bidimensional de superficie blanca con líneas negras mate (\SI{2}{cm} de ancho) y paso de grilla de \SI{24}{cm} (\SI{22}{cm} libres en \texttt{DEC-02}; \SI{22}{cm} de paso en la impresión inicial de \archivo{prueba\_4x4.txt}) \badgeok.
+  \item Condiciones físicas no ideales: pendiente del piso, fricción irregular entre llanta y cinta aislante, iluminación ambiental/solar y caída de tensión de las baterías \badgeok.
+\end{itemize} \\
+\midrule
+\textbf{Actuadores (Actuators)} &
+\begin{itemize}[leftmargin=1.2em,nosep]
+  \item Tracción diferencial 2WD mediante puente H doble L298N y dos motorreductores N20 (\SI{6}{V}, \SI{500}{RPM}, llantas de \SI{43}{mm}) controlados por PWM en GPIO 7/15/16 (motor A derecho) y GPIO 8/17/18 (motor B izquierdo), incluyendo freno por contramarcha (\cmd{pwm\_freno}) \badgeok.
+  \item LED RGB WS2812 en GPIO 48 para señalización de estado (azul: sin mapa; verde: ruta lista; blanco: en movimiento; rojo: reinicio por \textit{brownout}) \badgeok.
+  \item Interfaz de salida por consola TCP/Serial y servidor web SSE en \archivo{pc/demo.py} (rama \texttt{pc/interfaz} \badgepr).
+\end{itemize} \\
+\midrule
+\textbf{Sensores (Sensors)} &
+\begin{itemize}[leftmargin=1.2em,nosep]
+  \item 3 sensores ópticos reflectivos TCRT5000 analógicos en ADC1 (GPIO 4 izquierdo, 5 centro/frontal, 6 derecho), normalizados en $[0, 1000]$ \badgeok.
+  \item Unidad de medición inercial (IMU) MPU6050 por I2C a \SI{400}{kHz} (GPIO 9 SDA, 10 SCL), integrada a \SI{500}{Hz} en eje $Z$ ($\pm\SI{500}{\degree/s}$) para rumbo y velocidad angular \badgeok.
+  \item Divisor resistivo de tensión de batería ($\SI{6.6}{k\Omega}/\SI{2.2}{k\Omega}$ con filtro de \SI{10}{nF}) en GPIO 1 (ADC1) para compensación de PWM y telemetría \cmd{BAT} (rama \texttt{firmware/volver} \badgepr).
+\end{itemize} \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsection{Clasificación del entorno de tareas}
+\label{subsec:clasificacion-entorno}
+
+Un aspecto fundamental de la robótica móvil \cite{siegwart2011autonomous} es que el entorno posee propiedades distintas según se analice en el \textit{nivel deliberativo} (el modelo discreto donde opera el planificador) o en el \textit{nivel físico} (el mundo continuo donde actúa el controlador de movimiento). La \cref{tab:entorno-rn} contrasta ambos niveles siguiendo la taxonomía de Russell y Norvig \cite{russell2021aima}.
+
+\begin{table}[H]
+\centering
+\caption{Clasificación del entorno de tareas en los niveles deliberativo y físico \cite{russell2021aima}.}
+\label{tab:entorno-rn}
+\small
+\begin{tabularx}{\textwidth}{@{}p{2.9cm}p{4.8cm}X@{}}
+\toprule
+\textbf{Dimensión} & \textbf{Nivel deliberativo (modelo)} & \textbf{Nivel físico (mundo real)} \\
+\midrule
+\textbf{Observabilidad} &
+\textbf{Totalmente observable.} El mapa en grilla $(2n+1)\times(2m+1)$ se entrega completo a priori antes de iniciar la búsqueda. &
+\textbf{Parcialmente observable.} Sin \textit{encoders} en las ruedas, el robot no observa su posición $(x,y)$ continua; solo infiere rumbo relativo (MPU6050) y presencia local de línea (3$\times$ TCRT5000). \\
+\midrule
+\textbf{Determinismo} &
+\textbf{Determinista.} Cada acción \cmd{F}, \cmd{L}, \cmd{R} sobre \estado{f}{c}{o} produce un único estado sucesor exacto. &
+\textbf{Estocástico.} El desplazamiento real varía según pendiente del suelo, rozamiento rueda--cinta y descarga de las baterías (corregido mediante realineación frontal y control de rumbo). \\
+\midrule
+\textbf{Episódico vs. secuencial} &
+\textbf{Secuencial.} La validez y el costo de cada acción dependen de la secuencia acumulada desde el estado inicial. &
+\textbf{Secuencial.} La deriva angular o longitudinal de un tramo afecta la entrada al tramo siguiente si no se corrige. \\
+\midrule
+\textbf{Estático vs. dinámico} &
+\textbf{Estático.} Las paredes y la celda meta no cambian mientras el algoritmo calcula la ruta. &
+\textbf{Cuasiestático / dinámico.} Las paredes son fijas, pero la tensión del paquete de baterías cae en cada arranque y la luz solar ambiental puede variar durante la prueba. \\
+\midrule
+\textbf{Discreto vs. continuo} &
+\textbf{Discreto.} Espacio finito de estados $(f,c,o)$ con a lo sumo $16 \times 16 \times 4 = 1024$ estados y 3 acciones. &
+\textbf{Continuo.} Posición $(x,y,\theta) \in \mathbb{R}^2 \times [0, 2\pi)$, tiempo en milisegundos y lecturas ADC/I2C continuas. \\
+\midrule
+\textbf{Agentes} &
+\textbf{Monoagente.} Un único agente planifica sobre el grafo. &
+\textbf{Monoagente.} No existen otros robots ni adversarios en la pista. \\
+\midrule
+\textbf{Conocimiento} &
+\textbf{Conocido.} El modelo de transición y los costos $(c_F, c_{\text{giro}})$ están explícitamente definidos. &
+\textbf{Parcialmente conocido / calibrable.} La respuesta dinámica del chasis depende del sitio y requiere calibración (\cmd{SET}/\cmd{SAVE}). \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsection{Tipo de agente y arquitectura híbrida de capas}
+\label{subsec:tipo-arquitectura}
+
+Desde la perspectiva de la arquitectura interna de inteligencia artificial \cite{russell2021aima}, el robot combina dos paradigmas complementarios:
+\begin{itemize}[leftmargin=1.4em]
+  \item \textbf{Agente basado en objetivos} cuando utiliza el planificador BFS (\badgeok): su función objetivo se satisface al alcanzar cualquier orientación dentro de la celda meta $(f_g, c_g)$ con el mínimo número de acciones discretas.
+  \item \textbf{Agente basado en utilidad} cuando utiliza UCS o $A^*$ (\badgeok{} en PC; \badgepr{} $A^*$ a bordo en \texttt{firmware/astar}): evalúa una función de costo temporal que pondera el avance ($c_F = 1.0$) frente al giro ($c_{\text{giro}}$), prefiriendo trayectorias rectas más rápidas en tiempo real cuando los giros resultan costosos en pista.
+\end{itemize}
+
+Para acoplar la deliberación simbólica con el control en tiempo real sin bloquear los lazos sensoriales, el sistema implementa una \textbf{arquitectura híbrida deliberativa--reactiva} organizada en cinco capas estrictamente jerárquicas dentro del firmware del ESP32-S3, acopladas a un ecosistema de herramientas en Python en el PC (\cref{fig:arquitectura-capas}).
+
+\begin{figure}[H]
+\centering
+\input{figuras/fig_arquitectura_capas}
+\caption{Arquitectura híbrida de cinco capas en el ESP32-S3, ecosistema de soporte en PC y ciclo interno percibir--planear--actuar.}
+\label{fig:arquitectura-capas}
+\end{figure}
+
+El diseño impone tres reglas de desacoplamiento verificables en código y pruebas automatizadas \cite{arquitectura2026doc}:
+\begin{enumerate}[leftmargin=1.4em]
+  \item \textbf{Dependencia descendente estricta:} cada capa del firmware (\textit{Comandos $\rightarrow$ Planificador $\rightarrow$ Ejecutor $\rightarrow$ Movimiento $\rightarrow$ HAL}) solo invoca servicios de la capa inmediatamente inferior.
+  \item \textbf{Aislamiento entre búsqueda y hardware:} la capa \textit{Planificador} desconoce los pines, motores o sensores, y el \textit{Ejecutor} es agnóstico respecto a si la ruta \cmd{F/L/R} fue generada por BFS o por $A^*$.
+  \item \textbf{Portabilidad cruzada (\archivo{src/planner/}):} los archivos C++ del lector de mapas y los algoritmos de búsqueda no incluyen \archivo{Arduino.h}. Esto permite compilarlos de forma nativa en el PC mediante \cmd{ziglang}/\cmd{g++} dentro de la suite \archivo{pc/tests/test\_planner\_cpp.py} y verificar paridad exacta (misma ruta, costo y nodos expandidos) frente a las implementaciones de referencia en Python.
+\end{enumerate}
+
+Por su parte, el ecosistema PC agrupa utilidades desacopladas para todo el ciclo experimental: \archivo{pc/planear.py} y \archivo{pc/comparar.py} (\badgepr, \texttt{firmware/astar}) ejecutan y comparan algoritmos; \archivo{pc/generar.py} (\badgepr, \texttt{mapas/SW-05}) sintetiza laberintos aleatorios; \archivo{pc/imprimir.py} (\badgeok) produce los planos físicos en PDF; \archivo{pc/enviar.py} (\badgeok) y \archivo{pc/consola.py} (\badgeok) gestionan el enlace TCP/Serial y verifican paridad; y \archivo{pc/demo.py} (\badgepr, \texttt{pc/interfaz}) expone una interfaz web en vivo mediante \textit{Server-Sent Events} (SSE).

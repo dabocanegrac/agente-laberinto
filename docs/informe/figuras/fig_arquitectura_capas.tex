@@ -1,0 +1,89 @@
+\begin{tikzpicture}[
+  scale=0.87, transform shape,
+  font=\sffamily\footnotesize,
+  node distance=0.35cm and 0.65cm,
+  capa/.style={
+    rectangle, rounded corners=3pt, draw=azuldoc, fill=azulfondo,
+    thick, minimum width=6.4cm, minimum height=0.92cm, align=center,
+    inner sep=4pt
+  },
+  pcbox/.style={
+    rectangle, rounded corners=3pt, draw=azulclaro, fill=white,
+    thick, minimum width=4.3cm, minimum height=0.78cm, align=center,
+    inner sep=4pt
+  },
+  ciclo/.style={
+    rectangle, rounded corners=3pt, draw=unalverde, fill=verdefondo,
+    thick, minimum width=2.25cm, minimum height=0.78cm, align=center,
+    inner sep=4pt
+  },
+  flecha/.style={-{Stealth[length=2.2mm,width=1.6mm]}, thick, color=azuldoc},
+  flechaverde/.style={-{Stealth[length=2.2mm,width=1.6mm]}, thick, color=unalverde},
+  etiqueta/.style={font=\sffamily\scriptsize\bfseries, color=gristexto}
+]
+
+% --- Contenedor PC ---
+\node[pcbox] (pc_plan) {\textbf{\texttt{planear.py} / \texttt{comparar.py}}\\
+  {\scriptsize Referencia: BFS, UCS, A*, DFS, Greedy}};
+\node[pcbox, below=0.28cm of pc_plan] (pc_gen) {\textbf{\texttt{generar.py} / \texttt{imprimir.py}}\\
+  {\scriptsize Mapas aleatorios y PDFs 1:1 / armado}};
+\node[pcbox, below=0.28cm of pc_gen] (pc_env) {\textbf{\texttt{enviar.py} / \texttt{consola.py}}\\
+  {\scriptsize Transferencia, paridad BFS y CLI}};
+\node[pcbox, below=0.28cm of pc_env, draw=ambarborde, fill=ambarfondo] (pc_demo) {\textbf{\texttt{demo.py}} {\scriptsize (rama \texttt{pc/interfaz})}\\
+  {\scriptsize Interfaz web en vivo vía SSE + POST}};
+
+\node[
+  draw=azulclaro, dashed, rounded corners=4pt, inner sep=8pt,
+  fit=(pc_plan)(pc_gen)(pc_env)(pc_demo),
+  label={[font=\sffamily\footnotesize\bfseries\color{azuldoc}]above:Ecosistema PC (Python 3.10+)}
+] (marco_pc) {};
+
+% --- Contenedor Carro (5 capas) ---
+\node[capa, right=2.1cm of pc_plan, yshift=0.35cm] (c1) {\textbf{1. Comandos} (\texttt{agente.ino})\\
+  {\scriptsize Protocolo TCP/Serial: \texttt{MAPA\dots FIN}, \texttt{PLAN}, \texttt{ALGO}, \texttt{GO}, \texttt{SET/GET}}};
+\node[capa, below=0.32cm of c1, fill=verdefondo, draw=unalverde] (c2) {\textbf{2. Planificador} (\texttt{src/planner/})\\
+  {\scriptsize \texttt{mapa.cpp}, \texttt{bfs.cpp}, \texttt{astar.cpp} (sin \texttt{Arduino.h}; compilable en host)}};
+\node[capa, below=0.32cm of c2] (c3) {\textbf{3. Ejecutor} (máquina de estados sin \texttt{delay()})\\
+  {\scriptsize \texttt{ej.pose}, fases \texttt{AVANZAR}, \texttt{BUSCAR\_LINEA}, \texttt{ALINEAR}, \texttt{GIRAR}, \texttt{PULSO}}};
+\node[capa, below=0.32cm of c3] (c4) {\textbf{4. Movimiento} (control de trayectoria)\\
+  {\scriptsize Rumbo IMU (\texttt{kr}), aproximación (\texttt{pwm\_aprox}), freno contramarcha}};
+\node[capa, below=0.32cm of c4] (c5) {\textbf{5. HAL} (Hardware Abstraction Layer)\\
+  {\scriptsize L298N PWM, 3$\times$ TCRT5000 (ADC1), MPU6050 (I2C 500 Hz), NVS, Wi-Fi}};
+
+\node[
+  draw=azuldoc, thick, rounded corners=4pt, inner sep=8pt,
+  fit=(c1)(c2)(c3)(c4)(c5),
+  label={[font=\sffamily\footnotesize\bfseries\color{azuldoc}]above:Carro Autónomo (ESP32-S3 N16R8)}
+] (marco_carro) {};
+
+% --- Flechas entre capas ---
+\draw[flecha] (c1) -- node[right, etiqueta] {mapa} (c2);
+\draw[flecha] (c2) -- node[right, etiqueta] {ruta \texttt{F/L/R}} (c3);
+\draw[flecha] (c3) -- node[right, etiqueta] {\texttt{avanzar()}, \texttt{girar()}} (c4);
+\draw[flecha] (c4) -- node[right, etiqueta] {PWM / lecturas} (c5);
+
+% --- Enlace PC <-> Carro ---
+\draw[flecha, {Stealth[length=2.2mm,width=1.6mm]}-{Stealth[length=2.2mm,width=1.6mm]}, line width=1pt]
+  (pc_env.east) -- ++(0.55,0) |- node[pos=0.25, left=2pt, align=right, etiqueta]
+  {Wi-Fi TCP:23\\Serial 115200} (c1.west);
+\draw[flecha, dashed, {Stealth[length=2.2mm,width=1.6mm]}-{Stealth[length=2.2mm,width=1.6mm]}]
+  (pc_demo.east) -- ++(0.35,0) |- (c1.west);
+
+% Nota de autonomía DEC-05
+\node[
+  below=0.25cm of marco_pc, text width=4.4cm, align=center,
+  font=\sffamily\scriptsize, fill=ambarfondo, draw=ambarborde,
+  rounded corners=2pt, inner sep=4pt
+] (nota_dec05) {\textbf{Autonomía (DEC-05):} si se pierde el Wi-Fi tras \texttt{GO}, el carro planifica y ejecuta solo hasta la meta.};
+
+% --- Ciclo Percibir - Planear - Actuar (parte inferior) ---
+\node[ciclo, below=0.55cm of c5, xshift=-2.2cm] (percibir) {\textbf{Percibir}\\{\scriptsize TCRT5000, MPU6050, $V_{\text{bat}}$}};
+\node[ciclo, right=0.45cm of percibir] (planear) {\textbf{Planear}\\{\scriptsize BFS / A* a bordo}};
+\node[ciclo, right=0.45cm of planear] (actuar) {\textbf{Actuar}\\{\scriptsize L298N + motores N20}};
+
+\draw[flechaverde] (percibir) -- (planear);
+\draw[flechaverde] (planear) -- (actuar);
+\draw[flechaverde] (actuar.south) -- ++(0,-0.28) -| node[pos=0.25, below, etiqueta]
+  {interacción con el laberinto físico (retroalimentación continua)} (percibir.south);
+
+\end{tikzpicture}

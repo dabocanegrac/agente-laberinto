@@ -1,0 +1,99 @@
+\begin{tikzpicture}[
+  font=\sffamily\footnotesize,
+  caja/.style={
+    rectangle, rounded corners=3pt, draw=azuldoc, fill=white,
+    thick, inner sep=5pt, align=center
+  },
+  paso/.style={-{Stealth[length=2.3mm,width=1.7mm]}, very thick, color=azuldoc},
+  etq/.style={font=\sffamily\scriptsize\bfseries, color=azuldoc}
+]
+
+% ============================================================================
+% 1. Archivo de texto (2n+1)x(2m+1)
+% ============================================================================
+\node[caja, fill=codigofondo, anchor=north west] (txt) at (0,0) {
+  \textbf{1. Archivo \texttt{.txt} $(2n{+}1)\times(2m{+}1)$}\\[3pt]
+  {\ttfamily\scriptsize
+  \begin{tabular}{l}
+  inicio 0 0 E \\
+  meta 1 1 \\
+  \textcolor{azuldoc}{\textbf{1}}\textcolor{rojoborde}{1}\textcolor{azuldoc}{\textbf{1}}\textcolor{rojoborde}{1}\textcolor{azuldoc}{\textbf{1}} \\
+  \textcolor{rojoborde}{1}\textcolor{unalverde}{\textbf{0}}0\textcolor{unalverde}{\textbf{0}}\textcolor{rojoborde}{1} \\
+  \textcolor{azuldoc}{\textbf{1}}\textcolor{rojoborde}{1}\textcolor{azuldoc}{\textbf{1}}0\textcolor{azuldoc}{\textbf{1}} \\
+  \textcolor{rojoborde}{1}\textcolor{unalverde}{\textbf{0}}0\textcolor{unalverde}{\textbf{0}}\textcolor{rojoborde}{1} \\
+  \textcolor{azuldoc}{\textbf{1}}\textcolor{rojoborde}{1}\textcolor{azuldoc}{\textbf{1}}\textcolor{rojoborde}{1}\textcolor{azuldoc}{\textbf{1}}
+  \end{tabular}}\\[3pt]
+  {\scriptsize \textcolor{unalverde}{\textbf{0}}: celda $(2f{+}1,2c{+}1)$ \;\; \textcolor{rojoborde}{1}: pared \;\; \textcolor{azuldoc}{\textbf{1}}: poste}
+};
+
+% ============================================================================
+% 2. Grilla lógica de celdas (f,c) sin tikzpicture anidado
+% ============================================================================
+\begin{scope}[shift={(5.4,-0.35)}]
+  \node[font=\sffamily\footnotesize\bfseries, color=azuldoc] at (1.1,0.3) {2. Celdas lógicas $(f,c)$};
+  \fill[azulfondo] (0,-2.0) rectangle (2.2,0.0);
+  \draw[grisborde, thin, dashed] (0,-1.0) -- (2.2,-1.0) (1.1,0.0) -- (1.1,-2.0);
+  \draw[line width=2pt, color=azuldoc] (0,0) -- (2.2,0) -- (2.2,-2.0) -- (0,-2.0) -- cycle;
+  \draw[line width=2pt, color=azuldoc] (0,-1.0) -- (1.1,-1.0);
+  \node[font=\ttfamily\scriptsize] at (0.55,-0.5) {(0,0) S};
+  \node[font=\ttfamily\scriptsize] at (1.65,-0.5) {(0,1)};
+  \node[font=\ttfamily\scriptsize] at (0.55,-1.5) {(1,0)};
+  \node[font=\ttfamily\scriptsize, color=unalverde] at (1.65,-1.5) {\textbf{(1,1) M}};
+  \node[font=\sffamily\scriptsize, color=gristexto] at (1.1,-2.35) {$f\in[0,n{-}1]$, $c\in[0,m{-}1]$};
+  \coordinate (celdas_w) at (-0.15,-1.0);
+  \coordinate (celdas_e) at (2.35,-1.0);
+\end{scope}
+
+% ============================================================================
+% 3. Máscara de 4 bits (uint8_t)
+% ============================================================================
+\node[caja, fill=verdefondo, draw=unalverde, anchor=north west] (mask) at (8.8,0) {
+  \textbf{3. Bitmask \texttt{paredes[f][c]}}\\[2pt]
+  {\scriptsize \texttt{N=1, E=2, S=4, O=8}}\\[4pt]
+  {\ttfamily\scriptsize
+  \begin{tabular}{|c|c|}
+  \hline
+  \textbf{13} (\texttt{1101}) & \textbf{3} (\texttt{0011}) \\
+  {\tiny N+S+O} & {\tiny N+E} \\
+  \hline
+  \textbf{13} (\texttt{1101}) & \textbf{6} (\texttt{0110}) \\
+  {\tiny N+S+O} & {\tiny E+S} \\
+  \hline
+  \end{tabular}}\\[4pt]
+  {\scriptsize Acceso $O(1)$: \texttt{paredes[f][c] \& (1 \textless\textless{} ori)}}
+};
+
+% ============================================================================
+% 4. Plano físico en cm (celda 24 cm, línea 2 cm) sin tikzpicture anidado
+% ============================================================================
+\begin{scope}[shift={(4.6,-6.2)}, scale=0.065]
+  \fill[ambarfondo, rounded corners=3pt] (-14,-14) rectangle (66,64);
+  \draw[ambarborde, thick, rounded corners=3pt] (-14,-14) rectangle (66,64);
+  \node[font=\sffamily\footnotesize\bfseries, color=azuldoc] at (26,58)
+    {4. Plano físico en pista (\texttt{pc/imprimir.py}, en cm)};
+  % Margen 5 cm
+  \fill[white] (-5,-5) rectangle (55,55);
+  \draw[grisborde, dashed] (-5,-5) rectangle (55,55);
+  % Paredes negras de grosor 2 cm (celda = 24 cm -> 50x50 cm)
+  \fill[black] (0,48) rectangle (50,50);   % H1 arriba
+  \fill[black] (0,24) rectangle (26,26);   % H2 media izq
+  \fill[black] (0,0) rectangle (50,2);     % H3 abajo
+  \fill[black] (0,2) rectangle (2,24);     % V izq inf
+  \fill[black] (0,26) rectangle (2,48);    % V izq sup
+  \fill[black] (48,2) rectangle (50,48);   % V der
+  % Cotas
+  \draw[{Stealth[length=1.5mm]}-{Stealth[length=1.5mm]}, color=azuldoc, thick]
+    (2,13) -- (26,13) node[midway, above, font=\sffamily\tiny] {22 cm libre};
+  \draw[{Stealth[length=1.5mm]}-{Stealth[length=1.5mm]}, color=rojoborde, thick]
+    (1,37) -- (25,37) node[midway, above, font=\sffamily\tiny] {24 cm paso};
+  \node[font=\sffamily\tiny, color=gristexto] at (26,-10)
+    {Ancho total $= 24c + 2 + 2\cdot 5 = \SI{60}{cm}$ (cinta mate / cartulina)};
+  \coordinate (fisico_e) at (66,25);
+\end{scope}
+
+% Flechas de flujo
+\draw[paso] (txt.east) -- (celdas_w);
+\draw[paso] (celdas_e) -- (mask.west);
+\draw[paso] (mask.south) |- node[pos=0.25, right, etq] {escala 1:1} (fisico_e);
+
+\end{tikzpicture}
