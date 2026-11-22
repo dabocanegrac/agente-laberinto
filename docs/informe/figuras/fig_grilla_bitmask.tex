@@ -29,8 +29,8 @@
 % ============================================================================
 % 2. Grilla lógica de celdas (f,c) sin tikzpicture anidado
 % ============================================================================
-\begin{scope}[shift={(5.4,-0.35)}]
-  \node[font=\sffamily\footnotesize\bfseries, color=azuldoc] at (1.1,0.3) {2. Celdas lógicas $(f,c)$};
+\begin{scope}[shift={(6.4,-0.55)}]
+  \node[font=\sffamily\footnotesize\bfseries, color=azuldoc] at (1.1,0.35) {2. Celdas lógicas $(f,c)$};
   \fill[azulfondo] (0,-2.0) rectangle (2.2,0.0);
   \draw[grisborde, thin, dashed] (0,-1.0) -- (2.2,-1.0) (1.1,0.0) -- (1.1,-2.0);
   \draw[line width=2pt, color=azuldoc] (0,0) -- (2.2,0) -- (2.2,-2.0) -- (0,-2.0) -- cycle;
@@ -47,7 +47,7 @@
 % ============================================================================
 % 3. Máscara de 4 bits (uint8_t)
 % ============================================================================
-\node[caja, fill=verdefondo, draw=unalverde, anchor=north west] (mask) at (8.8,0) {
+\node[caja, fill=verdefondo, draw=unalverde, anchor=north west] (mask) at (9.6,0) {
   \textbf{3. Bitmask \texttt{paredes[f][c]}}\\[2pt]
   {\scriptsize \texttt{N=1, E=2, S=4, O=8}}\\[4pt]
   {\ttfamily\scriptsize
@@ -66,10 +66,10 @@
 % ============================================================================
 % 4. Plano físico en cm (celda 24 cm, línea 2 cm) sin tikzpicture anidado
 % ============================================================================
-\begin{scope}[shift={(4.6,-6.2)}, scale=0.065]
-  \fill[ambarfondo, rounded corners=3pt] (-14,-14) rectangle (66,64);
-  \draw[ambarborde, thick, rounded corners=3pt] (-14,-14) rectangle (66,64);
-  \node[font=\sffamily\footnotesize\bfseries, color=azuldoc] at (26,58)
+\begin{scope}[shift={(5.3,-8.6)}, scale=0.065]
+  \fill[ambarfondo, rounded corners=3pt] (-24,-15) rectangle (76,65);
+  \draw[ambarborde, thick, rounded corners=3pt] (-24,-15) rectangle (76,65);
+  \node[font=\sffamily\footnotesize\bfseries, color=azuldoc] at (26,59)
     {4. Plano físico en pista (\texttt{pc/imprimir.py}, en cm)};
   % Margen 5 cm
   \fill[white] (-5,-5) rectangle (55,55);
@@ -88,7 +88,7 @@
     (1,37) -- (25,37) node[midway, above, font=\sffamily\tiny] {24 cm paso};
   \node[font=\sffamily\tiny, color=gristexto] at (26,-10)
     {Ancho total $= 24c + 2 + 2\cdot 5 = \SI{60}{cm}$ (cinta mate / cartulina)};
-  \coordinate (fisico_e) at (66,25);
+  \coordinate (fisico_e) at (76,25);
 \end{scope}
 
 % Flechas de flujo

@@ -5,7 +5,7 @@
 \usepackage[T1]{fontenc}
 \usepackage{lmodern}
 \usepackage{microtype}
-\usepackage[spanish,es-tabla,es-nodecimaldot]{babel}
+\usepackage[spanish,es-tabla,es-nodecimaldot,es-noshorthands]{babel}
 
 % Geometría y encabezados
 \usepackage[letterpaper,top=2.4cm,bottom=2.4cm,left=2.4cm,right=2.4cm,headheight=15pt]{geometry}
@@ -27,7 +27,7 @@
   output-decimal-marker = {.},
   per-mode = symbol,
   detect-all = true,
-  range-phrase = {--},
+  range-phrase = {\text{--}},
   range-units = single
 }
 
@@ -223,6 +223,10 @@
   pdfauthor={Equipo Agente Laberinto - Universidad Nacional de Colombia}
 ]{hyperref}
 \usepackage[spanish,nameinlink]{cleveref}
+\crefname{table}{Tabla}{Tablas}
+\Crefname{table}{Tabla}{Tablas}
+\crefname{figure}{Figura}{Figuras}
+\Crefname{figure}{Figura}{Figuras}
 \crefname{algocf}{Algoritmo}{Algoritmos}
 \Crefname{algocf}{Algoritmo}{Algoritmos}
 \crefname{proposicion}{Proposición}{Proposiciones}

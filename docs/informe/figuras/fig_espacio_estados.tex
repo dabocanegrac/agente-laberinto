@@ -51,8 +51,8 @@
     \draw[avance] (E) -- node[above, font=\tiny\bfseries] {$F$ ($1.0$)} (EE);
     \draw[avance] (S) -- node[right, font=\tiny\bfseries] {$F$ ($1.0$)} (SS);
 
-    % Leyenda compacta
-    \node[anchor=north west, align=left, font=\tiny, text=gristexto] at (-2.15, -2.35) {
+    % Leyenda compacta (debajo del nodo vecino inferior para evitar solapamientos)
+    \node[anchor=north west, align=left, font=\tiny, text=gristexto] at (-2.15, -3.72) {
       \textcolor{azuldoc}{\textbf{---}} $R$: $(o{+}1)\bmod 4$, costo $c_{\text{giro}}$\\
       \textcolor{azulclaro}{\textbf{- -}} $L$: $(o{+}3)\bmod 4$, costo $c_{\text{giro}}$\\
       \textcolor{unalverde}{\textbf{---}} $F$: avanza si libre, costo $1.0$

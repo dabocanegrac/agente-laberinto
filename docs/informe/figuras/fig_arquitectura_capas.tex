@@ -39,7 +39,7 @@
 ] (marco_pc) {};
 
 % --- Contenedor Carro (5 capas) ---
-\node[capa, right=2.1cm of pc_plan, yshift=0.35cm] (c1) {\textbf{1. Comandos} (\texttt{agente.ino})\\
+\node[capa, right=3.0cm of pc_plan, yshift=0.35cm] (c1) {\textbf{1. Comandos} (\texttt{agente.ino})\\
   {\scriptsize Protocolo TCP/Serial: \texttt{MAPA\dots FIN}, \texttt{PLAN}, \texttt{ALGO}, \texttt{GO}, \texttt{SET/GET}}};
 \node[capa, below=0.32cm of c1, fill=verdefondo, draw=unalverde] (c2) {\textbf{2. Planificador} (\texttt{src/planner/})\\
   {\scriptsize \texttt{mapa.cpp}, \texttt{bfs.cpp}, \texttt{astar.cpp} (sin \texttt{Arduino.h}; compilable en host)}};
@@ -64,10 +64,11 @@
 
 % --- Enlace PC <-> Carro ---
 \draw[flecha, {Stealth[length=2.2mm,width=1.6mm]}-{Stealth[length=2.2mm,width=1.6mm]}, line width=1pt]
-  (pc_env.east) -- ++(0.55,0) |- node[pos=0.25, left=2pt, align=right, etiqueta]
-  {Wi-Fi TCP:23\\Serial 115200} (c1.west);
+  (pc_env.east) -- ++(0.95,0) |- (c1.west);
+\node[etiqueta, draw=grisborde, fill=white, text=azuldoc, rounded corners=2pt, inner sep=2.5pt, align=center]
+  at ($(pc_gen.east)+(1.35,0.15)$) {Wi-Fi TCP:23\\Serial 115200};
 \draw[flecha, dashed, {Stealth[length=2.2mm,width=1.6mm]}-{Stealth[length=2.2mm,width=1.6mm]}]
-  (pc_demo.east) -- ++(0.35,0) |- (c1.west);
+  (pc_demo.east) -- ++(0.65,0) |- (c1.west);
 
 % Nota de autonomía DEC-05
 \node[

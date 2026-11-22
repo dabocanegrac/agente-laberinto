@@ -61,7 +61,7 @@ Antes del cierre de las pruebas finales en los mapas físicos definitivos, el eq
 
 \subsubsection{Validación física en pista y caracterización del subsistema de control}
 
-La \cref{tab:resultados-pista-prelim} resume los hitos empíricos verificados en el robot físico documentados en \archivo{docs/ARQUITECTURA.md}~\cite{arquitectura2026doc} y \archivo{docs/HANDOFF.md}~\cite{handoff2026doc}.
+La \cref{tab:resultados-pista-prelim} resume los hitos empíricos verificados en el robot físico y documentados en \archivo{docs/\allowbreak ARQUITECTURA.md}~\cite{arquitectura2026doc} y \archivo{docs/\allowbreak HANDOFF.md}~\cite{handoff2026doc}.
 
 \begin{table}[htbp]
   \centering
@@ -90,7 +90,7 @@ La \cref{tab:sim-preliminar} y la \cref{fig:preliminar-nodos} reportan los valor
   \caption{Resultados preliminares de simulación registrados en \archivo{resultados/comparacion.csv} ($c_{\text{giro}} = 0.5$, mediana de 5 corridas).}
   \label{tab:sim-preliminar}
   \footnotesize
-  \begin{tabularx}{\textwidth}{@{}llcccccl@{}}
+  \begin{tabularx}{\textwidth}{@{}Xccccccc@{}}
     \toprule
     \textbf{Mapa} & \textbf{Algoritmo} & \textbf{Optimiza} & \textbf{Acciones} & \textbf{Giros} & \textbf{Costo} & \textbf{Expandidos} & \textbf{Tiempo (\si{\milli\second})} \\
     \midrule
@@ -166,10 +166,10 @@ Adicionalmente, las rutas esperadas de referencia de BFS para los dos mapas fís
   \centering
   \caption{[POR COMPLETAR] Matriz comparativa integral de los 5 algoritmos en simulación ($c_{\text{giro}}$ calibrado con tiempos reales).}
   \label{tab:plantilla-comparacion-all}
-  \footnotesize
-  \begin{tabularx}{\textwidth}{@{}llcccccc@{}}
+  \scriptsize
+  \begin{tabularx}{\textwidth}{@{}p{2.35cm}Xcccccc@{}}
     \toprule
-    \textbf{Mapa} & \textbf{Algoritmo} & \textbf{Acciones} & \textbf{Giros} & \textbf{Costo ($C$)} & \textbf{Expandidos ($E$)} & \textbf{$t_{\text{PC}}$ (\si{\milli\second})} & \textbf{$t_{\text{ESP32}}$ (\si{\micro\second})} \\
+    \textbf{Mapa} & \textbf{Algoritmo} & \textbf{Acc.} & \textbf{Giros} & \textbf{Costo} & \textbf{Exp.} & \textbf{$t_{\text{PC}}$ (\si{\milli\second})} & \textbf{$t_{\text{MCU}}$ (\si{\micro\second})} \\
     \midrule
     \multirow{5}{*}{\archivo{mapa1} ($4\times 3$)}
       & BFS    & 8   & 3   & \emph{[pend.]} & \emph{[pend.]} & \emph{[pend.]} & \emph{[pend.]} \\

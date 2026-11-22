@@ -7,14 +7,14 @@
 \subsection{Anexo A: Registro consolidado de decisiones de ingeniería}
 \label{subsec:anexo-decisiones}
 
-La \cref{tab:anexo-decisiones} consolida las seis decisiones formales registradas en la hoja \emph{Decisiones} de \archivo{Organizacion\_Agente\_Laberinto.xlsx}~\cite{excel2026organizacion}, junto con las decisiones técnicas evolutivas documentadas en el repositorio (\archivo{docs/ARQUITECTURA.md} y ramas de desarrollo).
+La \cref{tab:anexo-decisiones} consolida las seis decisiones formales registradas en la hoja \emph{Decisiones} del libro \archivo{Organizacion\_\allowbreak Agente\_\allowbreak Laberinto.xlsx}~\cite{excel2026organizacion}, junto con las decisiones técnicas evolutivas documentadas en el repositorio (\archivo{docs/\allowbreak ARQUITECTURA.md} y ramas de desarrollo).
 
 \begin{table}[htbp]
   \centering
   \caption{Registro de decisiones de diseño del proyecto (\texttt{DEC-01} a \texttt{DEC-06} y evoluciones posteriores).}
   \label{tab:anexo-decisiones}
   \footnotesize
-  \begin{tabularx}{\textwidth}{@{}llp{4.3cm}X@{}}
+  \begin{tabularx}{\textwidth}{@{}p{1.35cm}p{2.6cm}p{4.0cm}X@{}}
     \toprule
     \textbf{ID} & \textbf{Tema} & \textbf{Opciones evaluadas} & \textbf{Decisión adoptada y justificación} \\
     \midrule
@@ -37,13 +37,13 @@ La \cref{tab:anexo-decisiones} consolida las seis decisiones formales registrada
       Placa ESP32-S3 N16R8 + shield de expansión. &
       \textbf{ESP32-S3 N16R8:} Wi-Fi AP+STA, OTA en 16\,MB Flash, 8\,MB OPI PSRAM, ADC1 libre con Wi-Fi y FreeRTOS doble núcleo. \\
     \midrule
-    Evol.\ 1 & Control angular~\badgeok &
+    Evol.\ 1 & Control angular (\textcolor{unalverde}{\textbf{ok}}) &
       Giros por tiempo vs.\ giroscopio MPU6050. &
       \textbf{MPU6050 a \SI{500}{\hertz}:} redujo el error angular de $\pm 15\text{--}\SI{25}{\degree}$ a $\pm\SI{4}{\degree}$ (y $< \SI{2}{\degree}$ con PI en \archivo{firmware/volver}). \\
-    Evol.\ 2 & Energía motores~\badgepr &
+    Evol.\ 2 & Energía motores (\textcolor{azulclaro}{\textbf{PR}}) &
       4$\times$AA (\SI{6}{\volt}) vs.\ 6$\times$AA vs.\ pack 2S~18650. &
       \textbf{Pack 2S~18650 + compensación PWM} (\archivo{firmware/volver}): resuelve falta de torque y desacopla \cmd{t\_celda} del nivel de carga. \\
-    Evol.\ 3 & Planificador a bordo~\badgepr &
+    Evol.\ 3 & Planificador a bordo (\textcolor{azulclaro}{\textbf{PR}}) &
       Solo BFS vs.\ BFS + A* seleccionable. &
       \textbf{BFS y A* en C++} (\archivo{firmware/astar}): comando \cmd{ALGO}, paridad verificada contra Python en 60 mapas aleatorios. \\
     \bottomrule

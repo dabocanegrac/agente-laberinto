@@ -11,7 +11,7 @@ La representación externa del laberinto constituye el contrato compartido entre
   \item \textbf{Mapeo geométrico:} la celda lógica $(f, c)$ ocupa la posición impar-impar $(2f+1, 2c+1)$ de la grilla. Las posiciones con una coordenada par y otra impar codifican las paredes entre celdas adyacentes (\cmd{1} = pared, \cmd{0} = libre), mientras que las coordenadas par-par $(2f, 2c)$ representan los postes estructurales de las esquinas.
 \end{itemize}
 
-\begin{decision}{DEC-01: Formato del mapa en grilla de 0/1 \badgeok}
+\begin{decision}{DEC-01: Formato del mapa en grilla de 0/1}
 Se compararon dos formatos de entrada para los archivos de mapa: (a) \textit{matriz directa de máscaras de bits por celda} (enteros $0\text{--}15$), compacta pero propensa a errores humanos al no garantizar simetría entre paredes compartidas por dos celdas vecinas; y (b) \textit{grilla textual explícita} $(2n+1)\times(2m+1)$ de \cmd{0} y \cmd{1}. Se adoptó la opción (b) porque resulta visualmente legible para inspección y edición manual, impide por construcción inconsistencias de paredes asimétricas y permite que tanto el PC como el ESP32-S3 lean exactamente el mismo archivo sin pasos previos de conversión \cite{arquitectura2026doc}.
 \end{decision}
 
@@ -92,6 +92,6 @@ Convierte cualquier mapa válido en dos documentos PDF ubicados en \archivo{buil
   \item \textbf{Salidas generadas:} \archivo{<mapa>\_plotter.pdf} en escala exacta $1:1$ con regla de verificación de \SI{10}{cm} en el borde, y \archivo{<mapa>\_armado.pdf} con cotas de ensamblaje y lista de piezas para montaje manual con cinta aislante o cartulina negra mate.
 \end{itemize}
 
-\begin{hallazgo}[Invisibilidad infrarroja de la tinta de plotter (26/10/2026) \badgeok]
+\begin{hallazgo}[Invisibilidad infrarroja de la tinta de plotter (26/10/2026)]
 Durante las pruebas iniciales sobre el plano impreso en plotter de \archivo{prueba\_4x4.txt}, se comprobó que los sensores reflectivos TCRT5000 (\SI{950}{nm}) leían la tinta negra del plotter con valores prácticamente idénticos al papel blanco ($\approx 24\text{--}85$ en escala normalizada $[0,1000]$, frente a $400\text{--}690$ sobre cinta aislante negra mate) \cite{arquitectura2026doc}. En consecuencia, el plano impreso a escala $1:1$ se conserva como plantilla geométrica de precisión y todas las líneas de pared se recubren con cinta aislante negra mate de $\approx\SI{1.9}{cm}$ (centrada sobre la línea guía de \SI{2}{cm}).
 \end{hallazgo}

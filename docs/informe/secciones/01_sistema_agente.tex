@@ -8,11 +8,11 @@ El proyecto \texttt{agente-laberinto} \cite{repo2026agentelaberinto} implementa 
 
 El sistema adopta un ciclo clásico de inteligencia artificial embebida ---\textbf{percibir $\rightarrow$ planear $\rightarrow$ actuar}--- ejecutado íntegramente dentro del microcontrolador del vehículo \cite{arquitectura2026doc}. A diferencia de los esquemas teleoperados donde un computador central calcula la trayectoria y transmite comandos paso a paso, el computador personal (PC) cumple exclusivamente funciones de referencia algorítmica, simulación, generación/impresión de pistas, calibración y transferencia inicial del mapa. Este documento describe el estado integral del sistema, diferenciando explícitamente entre los componentes ya integrados y validados en pista sobre la rama \texttt{main} (\badgeok), los desarrollos implementados en ramas de trabajo activas en proceso de integración (\badgepr) y las extensiones proyectadas (\badgepend).
 
-\begin{decision}{DEC-05: Planificación y ejecución autónoma a bordo \badgeok}
+\begin{decision}{DEC-05: Planificación y ejecución autónoma a bordo}
 Se evaluaron dos arquitecturas de control: (a) \textit{planificación en PC y telemetría continua}, donde el computador envía cada comando de movimiento por Wi-Fi; y (b) \textit{autonomía total a bordo}, donde el PC transfiere el archivo de mapa una única vez y verifica la paridad de la ruta devuelta. Se eligió la opción (b) porque garantiza que el agente siga operando incluso ante pérdida total de conectividad Wi-Fi tras el comando \cmd{GO}. Esta propiedad fue verificada empíricamente el 27/10/2026 desconectando la interfaz inalámbrica del PC a mitad de recorrido sin afectar la llegada a la meta \cite{arquitectura2026doc}.
 \end{decision}
 
-\begin{decision}{DEC-06: Selección del microcontrolador ESP32-S3 N16R8 \badgeok}
+\begin{decision}{DEC-06: Selección del microcontrolador ESP32-S3 N16R8}
 Se seleccionó la placa de desarrollo ESP32-S3 N16R8 (\SI{16}{MB} de memoria Flash, \SI{8}{MB} de PSRAM OPI y procesador Xtensa LX7 de doble núcleo hasta \SI{240}{MHz}) \cite{espressif2024esp32s3} frente a alternativas de 8 bits (Arduino Uno/Mega) o placas sin radio integrada. Las razones técnicas determinantes fueron: (1) disponibilidad simultánea de Wi-Fi para consola TCP y actualizaciones inalámbricas (OTA), (2) abundante SRAM estática para alojar estructuras de búsqueda como $A^*$ ($\sim\SI{60}{KB}$) sin desbordar la pila, (3) múltiples canales ADC1 independientes del Wi-Fi para los sensores ópticos y de batería, y (4) soporte de FreeRTOS para aislar la integración del giroscopio en una tarea dedicada a \SI{500}{Hz} \cite{arquitectura2026doc}.
 \end{decision}
 
