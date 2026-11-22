@@ -1,0 +1,43 @@
+\documentclass[11pt,letterpaper]{article}
+\input{preambulo}
+
+\begin{document}
+
+% Portada y Resumen (Abstract)
+\pagenumbering{Alph}
+\input{secciones/00_portada_resumen}
+
+% Índices
+\clearpage
+\pagenumbering{roman}
+\setcounter{page}{1}
+\tableofcontents
+\clearpage
+\listoffigures
+\listoftables
+\listofalgorithms
+
+% Cuerpo principal
+\clearpage
+\pagenumbering{arabic}
+\setcounter{page}{1}
+
+\input{secciones/01_sistema_agente}
+\input{secciones/02_hardware_materiales}
+\input{secciones/03_funcionamiento_control}
+\input{secciones/04_entorno_memoria_mapas}
+\input{secciones/05_formulacion_algoritmos}
+\input{secciones/06_experimentacion_resultados}
+\input{secciones/07_bugs_limitaciones_futuro}
+\input{secciones/08_conclusiones}
+
+% Referencias bibliográficas
+\clearpage
+\printbibliography[heading=bibintoc,title={Referencias}]
+
+% Anexos técnicos
+\clearpage
+\appendix
+\input{secciones/09_anexos}
+
+\end{document}

@@ -1,0 +1,74 @@
+% ============================================================================
+% Portada y Resumen (Abstract)
+% ============================================================================
+\begin{titlepage}
+  \thispagestyle{empty}
+  \centering
+
+  % Banda superior institucional
+  {\color{unalverde}\rule{\textwidth}{2.5pt}}\\[0.35cm]
+  {\large\bfseries\color{unalverde} UNIVERSIDAD NACIONAL DE COLOMBIA}\\[0.15cm]
+  {\normalsize\color{gristexto} Facultad de Ingeniería --- Curso de Inteligencia Artificial}\\[0.25cm]
+  {\color{grisborde}\rule{\textwidth}{0.8pt}}
+
+  \vspace{2.2cm}
+
+  {\Large\color{azulclaro}\bfseries INFORME TÉCNICO DEL PROYECTO}\\[0.5cm]
+
+  {\Huge\bfseries\color{azuldoc} Agente Autónomo Solucionador\\[0.25cm] de Laberintos 2D en ESP32-S3}\\[0.6cm]
+
+  {\large\itshape Diseño físico, control embebido con fusión sensorial IR--IMU,\\
+  planificación autónoma a bordo y comparación de algoritmos de búsqueda}
+
+  \vspace{1.6cm}
+
+  \begin{tcolorbox}[
+    colback=azulfondo,
+    colframe=azuldoc,
+    arc=4pt,
+    boxrule=0.8pt,
+    width=0.92\textwidth,
+    halign=center
+  ]
+    \textbf{\color{azuldoc} Repositorio oficial del proyecto:}\\[2pt]
+    \url{https://github.com/dabocanegrac/agente-laberinto}
+  \end{tcolorbox}
+
+  \vspace{1.4cm}
+
+  {\normalsize\bfseries\color{azuldoc} INTEGRANTES DEL EQUIPO}\\[0.45cm]
+  \begin{tabular}{ll}
+    \toprule
+    \textbf{Nombre completo} & \textbf{Correo electrónico} \\
+    \midrule
+    Daniel Alejandro Bocanegra Cifuentes & \texttt{dbocanegrac@unal.edu.co} \\
+    Angel David Piñeros Sierra           & \texttt{apineross@unal.edu.co} \\
+    Sara Sofía Rivera Sanabria           & \texttt{sariveras@unal.edu.co} \\
+    Vanessa Valeria Robles Mendoza       & \texttt{varoblesm@unal.edu.co} \\
+    Daniel Alonso Chavarro Chipatecua    & \texttt{daniel.chavarroch@gmail.com} \\
+    \bottomrule
+  \end{tabular}
+
+  \vfill
+
+  {\color{grisborde}\rule{0.7\textwidth}{0.6pt}}\\[0.3cm]
+  {\normalsize\color{gristexto} Colombia --- Noviembre de 2026}\\[0.1cm]
+  {\footnotesize\color{gristexto} Documento vivo: incluye resultados preliminares validados y secciones marcadas \emph{[POR COMPLETAR]} sujetas a las pruebas finales en pista.}
+\end{titlepage}
+
+% Página de Resumen (Abstract)
+\clearpage
+\thispagestyle{empty}
+\section*{Resumen}
+\addcontentsline{toc}{section}{Resumen}
+
+Este informe documenta de manera integral el diseño, la implementación y el análisis de un \textbf{agente físico autónomo solucionador de laberintos 2D} desarrollado para el curso de Inteligencia Artificial de la Universidad Nacional de Colombia~\cite{repo2026agentelaberinto,excel2026organizacion}. El sistema traslada los algoritmos clásicos de búsqueda en espacios de estados desde un entorno teórico de simulación hacia un robot móvil diferencial de dos ruedas (2WD) gobernado por un microcontrolador \textbf{ESP32-S3 N16R8}, operando bajo el ciclo completo \emph{percibir $\rightarrow$ planear $\rightarrow$ actuar} de forma totalmente autónoma a bordo.
+
+A diferencia de arquitecturas teleoperadas en las que un computador externo calcula la ruta y dicta comandos paso a paso, el proyecto adopta una \textbf{arquitectura autónoma embarcada} (\texttt{DEC-05}): el PC únicamente transfiere el mapa en formato de grilla $(2n+1)\times(2m+1)$ de ceros y unos por Wi-Fi (TCP puerto~23) o puerto serie, y el propio microcontrolador valida el laberinto, lo persiste en memoria no volátil (\texttt{Preferences}/NVS), ejecuta la búsqueda sobre el espacio de estados con orientación $\estado{f}{c}{o}$ y lleva a cabo el recorrido completo incluso ante la pérdida total de la conexión inalámbrica. Para compensar la ausencia de \emph{encoders} en los motorreductores N20-10 y mitigar la deriva acumulativa propia del avance por tiempo, el robot integra tres sensores ópticos reflectivos infrarrojos (\textbf{TCRT5000}) ---dos laterales para centrado y uno frontal para alineación geométrica contra paredes--- junto con un giroscopio inercial \textbf{MPU6050} muestreado a \SI{500}{\hertz} en una tarea FreeRTOS dedicada que gobierna giros absolutos de \SI{90}{\degree} y mantiene el rumbo en línea recta.
+
+El ecosistema de software en Python (\texttt{pc/}) actúa como banco de referencia, generador de mapas aleatorios reproducibles (\texttt{pc/generar.py}), trazador de planos a escala 1:1 y guías de armado (\texttt{pc/imprimir.py}), comparador sistemático de métricas (\texttt{pc/comparar.py}) e interfaz web de demostración en vivo (\texttt{pc/demo.py}). Sobre el mismo contrato de estados y costos relativos entre avance ($c_F = 1.0$) y giro ($c_{\text{giro}}$), se formulan y comparan algoritmos no informados (\textbf{BFS}, \textbf{UCS} y \textbf{DFS}) e informados (\textbf{Greedy Best-First} y \textbf{A*} con heurística Manhattan aumentada por orientación, demostrada admisible y consistente), garantizando mediante compilación cruzada y pruebas automatizadas la \textbf{paridad exacta} entre las implementaciones de referencia en Python y los planificadores en C++ embarcados (BFS en \texttt{main} y A* en integración).
+
+El informe detalla todas las decisiones de ingeniería (\texttt{DEC-01} a \texttt{DEC-06} y evoluciones posteriores en ramas activas como el control PI de velocidad angular, el paso a baterías 2S~18650 con compensación dinámica de voltaje y el comando \texttt{VOLVER}), presenta los resultados preliminares ya verificados en pista (\textbf{6 de 6 corridas exitosas} en el mapa de prueba de $4\times 4$ en $\approx\SI{14}{\second}$) y deja estructurada la Sección~6 con marcadores explícitos \emph{[POR COMPLETAR]} para incorporar las pruebas finales en los mapas físicos definitivos y en exteriores.
+
+\vspace{0.6cm}
+\noindent\textbf{Palabras clave:} Inteligencia Artificial aplicada, agente autónomo, planificación de rutas, búsqueda en espacio de estados, BFS, UCS, A*, ESP32-S3, MPU6050, TCRT5000, robótica móvil 2WD.
