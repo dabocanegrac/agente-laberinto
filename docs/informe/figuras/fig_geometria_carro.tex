@@ -1,0 +1,150 @@
+% ============================================================================
+% Figura: Plano técnico acotado de la geometría del robot en celda de 24 cm
+% ============================================================================
+\begin{tikzpicture}[
+  x=0.40cm, y=0.40cm,
+  >=Stealth,
+  cota/.style={<->, thick, azuldoc},
+  ext/.style={thin, gristexto!70, densely dashed},
+  linea/.style={fill=black!88},
+  chasis/.style={fill=azulfondo, draw=azuldoc, line width=1.1pt, rounded corners=2pt},
+  rueda/.style={fill=gristexto!85, draw=black, line width=0.8pt, rounded corners=1.5pt},
+  sensor/.style={fill=rojoborde, draw=black, line width=0.6pt}
+]
+
+  % --- Fondo blanco de la celda y margen exterior ---
+  \fill[white] (-16, -15) rectangle (16, 19);
+
+  % --- Líneas negras del laberinto (celda 24 cm entre centros, línea 2 cm) ---
+  % Línea izquierda: centro en x = -12 (de -13 a -11)
+  \fill[linea] (-13, -13) rectangle (-11, 13);
+  % Línea derecha: centro en x = +12 (de +11 a +13)
+  \fill[linea] (11, -13) rectangle (13, 13);
+  % Línea frontal: centro en y = +12 (de +11 a +13)
+  \fill[linea] (-13, 11) rectangle (13, 13);
+  % Línea trasera: centro en y = -12 (de -13 a -11)
+  \fill[linea] (-13, -13) rectangle (13, -11);
+
+  % --- Ejes de referencia (centro de celda = centro del eje de ruedas) ---
+  \draw[thin, gristexto!60, dash pattern=on 4pt off 2pt on 1pt off 2pt]
+    (0, -14) -- (0, 18.2);
+  \draw[thin, gristexto!60, dash pattern=on 4pt off 2pt on 1pt off 2pt]
+    (-14.5, 0) -- (14.5, 0);
+  \node[font=\scriptsize, gristexto, anchor=south west] at (0.2, 0.2) {Eje $(0,0)$};
+
+  % --- Ruedas (ancho total 15 cm: x de -7.5 a +7.5; diámetro 4.3 cm, ancho 1.9 cm) ---
+  \filldraw[rueda] (-7.5, -2.15) rectangle (-5.6, 2.15);
+  \filldraw[rueda] (5.6, -2.15) rectangle (7.5, 2.15);
+  % Eje mecánico
+  \draw[thick, black!70] (-5.6, 0) -- (5.6, 0);
+
+  % --- Chasis (18 cm de largo x 10 cm de ancho: x in [-5,5], y in [-4,14]) ---
+  \filldraw[chasis] (-5, -4) rectangle (5, 14);
+  \node[font=\footnotesize\bfseries, azuldoc, align=center] at (0, 5.2)
+    {Chasis 2WD\\$18 \times 10\text{ cm}$};
+
+  % --- Soporte frontal hasta y = 16 cm (largo total = 20 cm) ---
+  \draw[azuldoc, line width=1pt, fill=azulfondo!70] (-1.2, 14) rectangle (1.2, 16);
+
+  % --- Sensores TCRT5000 (3 unidades) ---
+  % Laterales: 16 cm entre puntas (x = -8 y x = +8)
+  \draw[thick, azuldoc] (-5, 7.5) -- (-8, 7.5);
+  \draw[thick, azuldoc] (5, 7.5) -- (8, 7.5);
+  \filldraw[sensor] (-8.4, 7.0) rectangle (-7.6, 8.0);
+  \filldraw[sensor] (7.6, 7.0) rectangle (8.4, 8.0);
+  % Sensor frontal: a 16 cm del eje (y = +16)
+  \filldraw[sensor] (-0.6, 15.6) rectangle (0.6, 16.4);
+
+  % Etiquetas de sensores (dentro del espacio blanco, sin tocar líneas negras)
+  \node[font=\scriptsize\bfseries, rojoborde, anchor=south, fill=white, inner sep=1pt]
+    at (-8.0, 8.3) {TCRT Izq.};
+  \node[font=\scriptsize\bfseries, rojoborde, anchor=south, fill=white, inner sep=1pt]
+    at (8.0, 8.3) {TCRT Der.};
+  \node[font=\scriptsize\bfseries, rojoborde, anchor=west, fill=white, inner sep=1pt]
+    at (1.3, 16.3) {TCRT Frontal};
+
+  % --- Flecha de sentido de avance ---
+  \draw[->, very thick, unalverde] (0, 8.5) -- (0, 12.2);
+  \node[font=\scriptsize\bfseries, unalverde, anchor=west] at (0.3, 10.2) {Avance};
+
+  % ==========================================================================
+  % ACOTACIONES (sin solapamientos)
+  % ==========================================================================
+
+  % 1. Celda 24 cm (centro a centro) - parte inferior externa
+  \draw[ext] (-12, -13) -- (-12, -17.5);
+  \draw[ext] (12, -13) -- (12, -17.5);
+  \draw[cota] (-12, -16.8) -- (12, -16.8)
+    node[midway, fill=white, inner sep=2pt, font=\footnotesize\bfseries]
+    {Celda: \SI{24}{cm} (centro a centro)};
+
+  % 2. Blanco interior 22 cm - parte inferior interna
+  \draw[ext] (-11, -11) -- (-11, -14.8);
+  \draw[ext] (11, -11) -- (11, -14.8);
+  \draw[cota] (-11, -14.2) -- (11, -14.2)
+    node[midway, fill=white, inner sep=2pt, font=\scriptsize]
+    {Blanco interior: \SI{22}{cm}};
+
+  % 3. Ancho con ruedas: 15 cm (abajo del chasis)
+  \draw[ext] (-7.5, -2.15) -- (-7.5, -7.2);
+  \draw[ext] (7.5, -2.15) -- (7.5, -7.2);
+  \draw[cota] (-7.5, -6.5) -- (7.5, -6.5)
+    node[midway, fill=white, inner sep=2pt, font=\scriptsize\bfseries]
+    {Ancho con ruedas: \SI{15}{cm}};
+
+  % 4. Distancia entre sensores laterales: 16 cm (por encima del chasis interno)
+  \draw[ext] (-8, 7.0) -- (-8, 3.2);
+  \draw[ext] (8, 7.0) -- (8, 3.2);
+  \draw[cota] (-8, 3.6) -- (8, 3.6)
+    node[midway, fill=azulfondo, inner sep=2pt, font=\scriptsize\bfseries]
+    {\SI{16}{cm} entre sensores laterales};
+
+  % 5. Tolerancia lateral sensores: 3 cm a la izquierda (x = -11 a -8)
+  \draw[ext] (-11, 7.5) -- (-11, 4.8);
+  \draw[ext] (-8, 7.0) -- (-8, 4.8);
+  \draw[cota, rojoborde] (-11, 5.2) -- (-8, 5.2);
+  \node[font=\scriptsize\bfseries, rojoborde, anchor=south, fill=white, inner sep=1pt]
+    at (-9.5, 5.45) {\SI{3}{cm}};
+
+  % 6. Tolerancia lateral ruedas: 3.5 cm a la derecha (x = 7.5 a 11)
+  \draw[ext] (7.5, -1.5) -- (7.5, -4.6);
+  \draw[ext] (11, -1.5) -- (11, -4.6);
+  \draw[cota, unalverde] (7.5, -4.2) -- (11, -4.2);
+  \node[font=\scriptsize\bfseries, unalverde, anchor=west, fill=white, inner sep=1pt]
+    at (13.4, -4.2) {Holgura rueda: \SI{3.5}{cm}};
+  \draw[thin, unalverde] (11.1, -4.2) -- (13.3, -4.2);
+
+  % 7. Grosor de línea: 2 cm (borde derecho inferior, sin cruzar Media celda)
+  \draw[cota] (11, -8.5) -- (13, -8.5);
+  \node[font=\scriptsize, anchor=west, fill=white, inner sep=1pt]
+    at (13.4, -8.5) {Línea: \SI{2}{cm}};
+  \draw[thin, azuldoc] (13.3, -8.5) -- (13.05, -8.5);
+
+  % 8. Distancia eje -> sensor frontal: 16 cm (lado izquierdo externo)
+  \draw[ext] (0, 0) -- (-15.8, 0);
+  \draw[ext] (-0.6, 16) -- (-15.8, 16);
+  \draw[cota] (-15.2, 0) -- (-15.2, 16)
+    node[midway, rotate=90, fill=white, inner sep=2pt, font=\scriptsize\bfseries]
+    {Eje a sensor frontal: \SI{16}{cm}};
+
+  % 9. Largo total del robot: 20 cm (lado izquierdo más externo)
+  \draw[ext] (-5, -4) -- (-18.5, -4);
+  \draw[ext] (-0.6, 16) -- (-18.5, 16);
+  \draw[cota] (-17.8, -4) -- (-17.8, 16)
+    node[midway, rotate=90, fill=white, inner sep=2pt, font=\scriptsize\bfseries]
+    {Largo total: \SI{20}{cm}};
+
+  % 10. Saliente de 4 cm del sensor frontal respecto al centro de línea (y = 12 a 16)
+  \draw[ext] (0, 12) -- (15.5, 12);
+  \draw[ext] (0.6, 16) -- (15.5, 16);
+  \draw[cota, rojoborde] (14.8, 12) -- (14.8, 16)
+    node[midway, anchor=west, fill=white, inner sep=2pt, font=\scriptsize\bfseries, align=left]
+    {Saliente: \SI{4}{cm}\\(sobre centro de línea)};
+
+  % 11. Media celda 12 cm (lado derecho, y = 0 a 12)
+  \draw[ext] (7.5, 0) -- (15.5, 0);
+  \draw[cota] (14.8, 0) -- (14.8, 12)
+    node[midway, rotate=90, fill=white, inner sep=2pt, font=\scriptsize]
+    {Media celda: \SI{12}{cm}};
+
+\end{tikzpicture}
