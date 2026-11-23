@@ -1,0 +1,16 @@
+
+# Mapa 2: prueba de giro en interseccion abierta
+# 4 filas x 3 columnas; celdas de 24 cm
+# Inicio (0,0) mirando al Este; meta (3,2)
+# 1 = pared, 0 = espacio libre
+inicio 0 0 E
+meta 3 2
+1111111
+1000001
+1110111
+1010001
+1110101
+1010001
+1111101
+1010101
+1111111
