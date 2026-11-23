@@ -1,4 +1,4 @@
-// Firmware del agente (ESP32-S3): recibe el mapa, calcula la ruta a bordo con BFS y la recorre.
+// Firmware del agente (ESP32-S3): recibe el mapa, calcula la ruta a bordo (BFS o A*) y la recorre.
 //
 // Comandos, una línea cada uno, por Serial (115200) o por TCP en 192.168.4.1:23 (red agente-laberinto):
 //   MAPA              empieza a recibir un mapa (formato de grilla, ver src/planner/mapa.h)
@@ -7,6 +7,7 @@
 //   PLAN              vuelve a calcular la ruta con el mapa guardado
 //   RUTA              imprime la última ruta
 //   COSTO_GIRO <v>    costo de L/R relativo a F (por defecto 0.5) y vuelve a planear
+//   ALGO [bfs|astar]  algoritmo con el que planea (por defecto bfs); lo guarda y vuelve a planear
 //   GO                recorre la ruta. El carro arranca con el eje en el centro de la celda de inicio
 //   PASO F [n]        avanza n celdas (por tiempo); PASO L / PASO R gira 90°;
 //   PASO A            avanza hasta ver una línea con el frontal y se alinea (para calibrar t_alinear)
@@ -39,6 +40,7 @@
 
 #include "src/config/pines.h"
 #include "src/config/parametros.h"
+#include "src/planner/astar.h"
 #include "src/planner/bfs.h"
 #include "src/imu/mpu6050.h"
 
@@ -63,7 +65,8 @@ planner::Mapa mapa;
 planner::Ruta ruta;
 bool hayMapa = false;
 bool hayRuta = false;
-float costoGiro = 0.5f;
+double costoGiro = 0.5;   // double, como en Python: así A* desempata igual (ver src/planner/astar.h)
+bool usarAstar = false;   // ALGO astar; si no, BFS
 Parametros par;
 
 // Va antes de la primera función: el IDE de Arduino declara las funciones arriba de todo.
@@ -425,13 +428,17 @@ void imprimirRuta(Stream& s) {
   s.println();
 }
 
+bool calcularRuta() {
+  return usarAstar ? planner::astar(mapa, costoGiro, ruta) : planner::bfs(mapa, costoGiro, ruta);
+}
+
 void planear(Stream& s) {
   if (!hayMapa) {
     s.println("ERR no hay mapa");
     return;
   }
   unsigned long t0 = micros();
-  hayRuta = planner::bfs(mapa, costoGiro, ruta);
+  hayRuta = calcularRuta();
   unsigned long us = micros() - t0;
   ledEstado();
   if (!hayRuta) {
@@ -439,7 +446,8 @@ void planear(Stream& s) {
     return;
   }
   imprimirRuta(s);
-  s.printf("# acciones=%d costo=%g expandidos=%d tiempo=%lu us\n", ruta.n, ruta.costo, ruta.expandidos, us);
+  s.printf("# algo=%s acciones=%d costo=%g expandidos=%d tiempo=%lu us\n", usarAstar ? "astar" : "bfs", ruta.n,
+           ruta.costo, ruta.expandidos, us);
 }
 
 void guardarMapa() {
@@ -451,7 +459,9 @@ void cargarMapa() {
     prefs.getBytes("mapa", &mapa, sizeof(mapa));
     hayMapa = true;
   }
-  costoGiro = prefs.getFloat("costo_giro", costoGiro);
+  costoGiro = prefs.getFloat("costo_giro", costoGiro);   // clave vieja (float), si no hay la nueva
+  if (prefs.getBytesLength("costo_giro_d") == sizeof(costoGiro)) prefs.getBytes("costo_giro_d", &costoGiro, sizeof(costoGiro));
+  usarAstar = prefs.getBool("astar", false);
 }
 
 // ---------- hotspot ----------
@@ -594,9 +604,20 @@ void Consola::procesar(char* l) {
     imprimirRuta(*s);
   } else if (strcmp(cmd, "COSTO_GIRO") == 0 && arg) {
     costoGiro = atof(arg);
-    prefs.putFloat("costo_giro", costoGiro);
+    prefs.putBytes("costo_giro_d", &costoGiro, sizeof(costoGiro));
     s->printf("OK costo_giro=%g\n", costoGiro);
     if (hayMapa) planear(*s);
+  } else if (strcmp(cmd, "ALGO") == 0) {
+    if (arg && strcasecmp(arg, "bfs") != 0 && strcasecmp(arg, "astar") != 0) {
+      s->printf("ERR algoritmo desconocido: %s (bfs o astar)\n", arg);
+    } else {
+      if (arg) {
+        usarAstar = strcasecmp(arg, "astar") == 0;
+        prefs.putBool("astar", usarAstar);
+      }
+      s->printf("OK algo=%s\n", usarAstar ? "astar" : "bfs");
+      if (arg && hayMapa) planear(*s);
+    }
   } else if (strcmp(cmd, "STOP") == 0) {
     detener(nullptr);
     s->println("OK stop");
@@ -675,8 +696,8 @@ void Consola::procesar(char* l) {
   } else if (strcmp(cmd, "INFO") == 0) {
     if (hayMapa) s->printf("OK mapa=%dx%d", mapa.filas, mapa.cols);
     else s->print("OK mapa=ninguno");
-    s->printf(" ruta=%d costo_giro=%g fase=%s imu=%s reset=%s uptime=%lus clientes_wifi=%d hotspot=%s\n",
-              hayRuta ? ruta.n : 0, costoGiro, NOMBRE_FASE[ej.fase], imu::ok() ? "ok" : "no",
+    s->printf(" algo=%s ruta=%d costo_giro=%g fase=%s imu=%s reset=%s uptime=%lus clientes_wifi=%d hotspot=%s\n",
+              usarAstar ? "astar" : "bfs", hayRuta ? ruta.n : 0, costoGiro, NOMBRE_FASE[ej.fase], imu::ok() ? "ok" : "no",
               nombreRazon(razonReset), millis() / 1000, WiFi.softAPgetStationNum(),
               WiFi.status() == WL_CONNECTED ? WiFi.localIP().toString().c_str() : "no");
   } else {
@@ -696,7 +717,7 @@ void atenderTcp() {
     cliente = nuevo;
     consolaTcp = Consola();
     consolaTcp.s = &cliente;
-    cliente.printf("# agente-laberinto. reset=%s. Comandos: MAPA ... FIN, PLAN, RUTA, COSTO_GIRO <v>, GO, "
+    cliente.printf("# agente-laberinto. reset=%s. Comandos: MAPA ... FIN, PLAN, RUTA, COSTO_GIRO <v>, ALGO [bfs|astar], GO, "
                    "PASO F|L|R|A, SET <p> <v>, GET, SAVE, SENS [ON|OFF], IMU [ON|OFF|CAL], "
                    "RED [CONECTAR|BORRAR], RED_SSID <nombre>, RED_CLAVE <clave>, INFO, STOP\n",
                    nombreRazon(razonReset));
@@ -722,7 +743,7 @@ void setup() {
     for (int i = 0; i < 3 && !imu::calibrar(); i++) delay(500);
   }
   cargarMapa();
-  if (hayMapa) hayRuta = planner::bfs(mapa, costoGiro, ruta);
+  if (hayMapa) hayRuta = calcularRuta();
   ledEstado();
 
   WiFi.mode(WIFI_AP_STA);

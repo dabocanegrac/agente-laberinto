@@ -1,18 +1,25 @@
 // Corre el planificador del carro en el PC, para compararlo con Python (pc/tests/test_planner_cpp.py).
-//   planear_host <mapa.txt> [costo_giro]
+//   planear_host <mapa.txt> [costo_giro] [bfs|astar]
 // Imprime la ruta en la primera línea y "acciones costo expandidos" en la segunda.
 
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 
+#include "../../../arduino/agente/src/planner/astar.h"
 #include "../../../arduino/agente/src/planner/bfs.h"
 
 int main(int argc, char** argv) {
   if (argc < 2) {
-    std::fprintf(stderr, "uso: planear_host <mapa.txt> [costo_giro]\n");
+    std::fprintf(stderr, "uso: planear_host <mapa.txt> [costo_giro] [bfs|astar]\n");
     return 2;
   }
-  float costo_giro = argc > 2 ? (float)std::atof(argv[2]) : 0.5f;
+  double costo_giro = argc > 2 ? std::atof(argv[2]) : 0.5;
+  const char* algo = argc > 3 ? argv[3] : "bfs";
+  if (std::strcmp(algo, "bfs") != 0 && std::strcmp(algo, "astar") != 0) {
+    std::fprintf(stderr, "algoritmo desconocido: %s\n", algo);
+    return 2;
+  }
   FILE* f = std::fopen(argv[1], "r");
   if (!f) {
     std::fprintf(stderr, "no se pudo abrir %s\n", argv[1]);
@@ -37,7 +44,8 @@ int main(int argc, char** argv) {
     return 1;
   }
   static planner::Ruta ruta;
-  if (!planner::bfs(mapa, costo_giro, ruta)) {
+  bool ok = std::strcmp(algo, "astar") == 0 ? planner::astar(mapa, costo_giro, ruta) : planner::bfs(mapa, costo_giro, ruta);
+  if (!ok) {
     std::printf("SIN RUTA\n");
     return 1;
   }

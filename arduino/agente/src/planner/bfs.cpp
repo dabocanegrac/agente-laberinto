@@ -4,33 +4,11 @@ namespace planner {
 
 namespace {
 
-const int DF[] = {-1, 0, 1, 0};   // N E S O
-const int DC[] = {0, 1, 0, -1};
-const char ACCIONES[] = {'F', 'L', 'R'};
-
 // Arreglos estáticos: con 16x16 son ~4 KB, y así no se usa el stack del loop.
 int16_t padre[MAX_ESTADOS];
 char accion[MAX_ESTADOS];
 bool visto[MAX_ESTADOS];
 int16_t cola[MAX_ESTADOS];
-
-int indice(const Mapa& m, const Estado& e) { return (e.fila * m.cols + e.col) * 4 + e.ori; }
-
-Estado estado_de(const Mapa& m, int i) {
-  return {(int8_t)(i / 4 / m.cols), (int8_t)(i / 4 % m.cols), (uint8_t)(i % 4)};
-}
-
-bool aplicar(const Mapa& m, const Estado& e, char a, Estado& sig) {
-  sig = e;
-  if (a == 'L') sig.ori = (e.ori + 3) % 4;
-  else if (a == 'R') sig.ori = (e.ori + 1) % 4;
-  else {
-    if (m.hay_pared(e.fila, e.col, e.ori)) return false;
-    sig.fila += DF[e.ori];
-    sig.col += DC[e.ori];
-  }
-  return true;
-}
 
 }  // namespace
 

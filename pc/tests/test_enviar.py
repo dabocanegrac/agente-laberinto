@@ -17,7 +17,7 @@ def carro_simulado(servidor, tmp_path, ruta_falsa=None):
     f = con.makefile("rwb")
     escribir = lambda t: (f.write(t.encode() + b"\n"), f.flush())
     escribir("# agente-laberinto (simulado)")
-    costo_giro, lineas, recibiendo = 0.5, [], False
+    costo_giro, algo, lineas, recibiendo = 0.5, "bfs", [], False
     for raw in f:
         l = raw.decode().strip()
         if recibiendo:
@@ -26,10 +26,14 @@ def carro_simulado(servidor, tmp_path, ruta_falsa=None):
                 p.write_text("\n".join(lineas), encoding="utf-8")
                 m = mapas.leer(p)
                 escribir(f"OK MAPA {m.filas}x{m.cols}")
-                res = ejecutar(REGISTRO["bfs"](costo_giro), m)
+                res = ejecutar(REGISTRO[algo](costo_giro), m)
                 escribir("RUTA " + (ruta_falsa or res.ruta))
                 break
             lineas.append(l)
+        elif l.startswith("ALGO"):
+            algo = l.split()[1]
+            escribir(f"OK algo={algo}")
+            escribir("RUTA F")  # ruta vieja que hay que descartar
         elif l.startswith("COSTO_GIRO"):
             costo_giro = float(l.split()[1])
             escribir(f"OK costo_giro={costo_giro:g}")
@@ -55,6 +59,11 @@ def correr(tmp_path, *extra, ruta_falsa=None):
 
 def test_envia_mapa_y_verifica_ruta(tmp_path, capsys):
     assert correr(tmp_path, "--costo-giro", "0.8") == 0
+    assert "misma ruta que Python" in capsys.readouterr().out
+
+
+def test_envia_con_astar(tmp_path, capsys):
+    assert correr(tmp_path, "--algo", "astar", "--costo-giro", "0.8") == 0
     assert "misma ruta que Python" in capsys.readouterr().out
 
 
