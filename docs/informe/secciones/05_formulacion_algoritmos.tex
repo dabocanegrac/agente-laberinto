@@ -1,27 +1,27 @@
-\section{Formulación del Problema y Algoritmos de Búsqueda}
+\section{Formulación del problema y algoritmos de búsqueda}
 \label{sec:algoritmos}
 
-La resolución autónoma de un laberinto conocido se formula en el proyecto \archivo{agente-laberinto} \cite{repo2026agentelaberinto} como un problema clásico de búsqueda heurística sobre un grafo dirigido de estados con orientación explícita. Esta sección presenta la formalización matemática del problema, analiza la sensibilidad de las rutas óptimas al costo de giro físico, describe en detalle los cinco algoritmos contemplados en la arquitectura del proyecto y explica los mecanismos que garantizan paridad exacta entre la referencia en Python y el firmware en C++ del ESP32-S3.
+En \archivo{agente-laberinto}~\cite{repo2026agentelaberinto}, encontrar el camino por el laberinto se plantea como un problema de búsqueda en un grafo dirigido donde cada nodo guarda también hacia dónde mira el carro. En esta sección definimos el espacio de estados y los costos, mostramos por qué el peso del giro cambia la ruta óptima, detallamos los cinco algoritmos contemplados en el proyecto y explicamos cómo verificamos que Python y el C++ del ESP32-S3 devuelvan exactamente lo mismo.
 
 % ----------------------------------------------------------------------------
-\subsection{Formulación del Problema de Búsqueda}
+\subsection{Formulación del problema de búsqueda}
 \label{subsec:formulacion-problema}
 
-A diferencia de una grilla abstracta donde un agente holonómico se desplaza libremente hacia sus cuatro vecinos cardinales, el robot diferencial físico del proyecto debe rotar sobre su propio eje antes de avanzar en una dirección ortogonal. Modelar únicamente la posición $(f, c)$ ocultaría el costo temporal de los giros e impediría distinguir entre trayectorias con igual longitud en celdas pero distinto tiempo real de ejecución \cite{arquitectura2026doc}.
+En un laberinto de papel donde una ficha salta libremente a cualquiera de sus cuatro vecinas, basta con usar la celda $(f, c)$ como estado. Un carro diferencial no funciona así: antes de avanzar en una dirección ortogonal tiene que rotar sobre su eje, y ese giro cuesta tiempo real. Si dejáramos la orientación por fuera del estado, dos caminos con las mismas celdas parecerían iguales aunque uno obligue a hacer el doble de giros~\cite{arquitectura2026doc}.
 
 \begin{definicion}[Problema de búsqueda en el laberinto]
 \label{def:problema-busqueda}
-Dado un laberinto rectangular de $F$ filas y $C$ columnas (con fila $0$ superior y columna $0$ izquierda), una celda inicial $(f_0, c_0)$ con orientación inicial $o_0$ y una celda meta $(f_g, c_g)$, el problema de planificación de ruta se define mediante la tupla $\mathcal{P} = (S, s_0, A, T, G, c)$:
+Dado un laberinto de $F$ filas y $C$ columnas (fila $0$ arriba, columna $0$ a la izquierda), una celda inicial $(f_0, c_0)$ con orientación $o_0$ y una celda meta $(f_g, c_g)$, el problema se define mediante la tupla $\mathcal{P} = (S, s_0, A, T, G, c)$:
 \begin{enumerate}[leftmargin=1.6em,itemsep=3pt]
   \item \textbf{Espacio de estados ($S$):}
   \[
     S = \{0, \dots, F-1\} \times \{0, \dots, C-1\} \times \mathcal{O}, \qquad \mathcal{O} = \{N, E, S, O\},
   \]
-  donde las orientaciones se indexan en sentido horario como $\{0, 1, 2, 3\}$ (\texttt{ORIENTACIONES = "NESO"} en \archivo{pc/modelo.py}). La cardinalidad del espacio es $|S| = 4FC$; bajo el límite del firmware (\texttt{MAX\_FILAS = 16}, \texttt{MAX\_COLS = 16}), el espacio alcanza a lo sumo $|S| \le 4 \times 16 \times 16 = 1024$ estados (\texttt{MAX\_ESTADOS}).
+  indexando las orientaciones en sentido horario como $\{0, 1, 2, 3\}$ (\texttt{ORIENTACIONES = "NESO"} en \archivo{pc/modelo.py}). En total hay $|S| = 4FC$ estados; con el tope del firmware (\texttt{MAX\_FILAS = 16}, \texttt{MAX\_COLS = 16}) nunca se pasan de $4 \times 16 \times 16 = 1024$ estados (\texttt{MAX\_ESTADOS}).
 
   \item \textbf{Estado inicial ($s_0$):} $s_0 = \estado{f_0}{c_0}{o_0} \in S$.
 
-  \item \textbf{Acciones aplicables ($A(s)$):} sobre cada estado $s = \estado{f}{c}{o}$ se evalúan las acciones relativas en el orden canónico $(F, L, R)$:
+  \item \textbf{Acciones aplicables ($A(s)$):} en cada estado $s = \estado{f}{c}{o}$ se prueban las acciones relativas siempre en el orden $(F, L, R)$:
   \[
     A\estado{f}{c}{o} =
     \begin{cases}
@@ -29,9 +29,9 @@ Dado un laberinto rectangular de $F$ filas y $C$ columnas (con fila $0$ superior
       \{L, R\}    & \text{si } \mathrm{hay\_pared}(f, c, o),
     \end{cases}
   \]
-  donde $F$ avanza una celda, $L$ gira $\SI{90}{\degree}$ a la izquierda y $R$ gira $\SI{90}{\degree}$ a la derecha. La media vuelta ($\SI{180}{\degree}$) se expresa como la composición $R, R$ (o $L, L$), manteniendo el grado de salida acotado en $3$.
+  donde $F$ avanza una celda, $L$ gira $\SI{90}{\degree}$ a la izquierda y $R$ gira $\SI{90}{\degree}$ a la derecha. Dar media vuelta ($\SI{180}{\degree}$) se expresa como $R, R$ (o $L, L$), de modo que cada nodo tiene como máximo 3 aristas salientes.
 
-  \item \textbf{Modelo de transición ($T(s, a)$):} sean $(\Delta f(o), \Delta c(o)) \in \{(-1,0), (0,1), (1,0), (0,-1)\}$ los desplazamientos unitarios asociados a $o \in \{N, E, S, O\}$. Para toda acción $a \in A(s)$:
+  \item \textbf{Modelo de transición ($T(s, a)$):} con los desplazamientos unitarios $(\Delta f(o), \Delta c(o)) \in \{(-1,0), (0,1), (1,0), (0,-1)\}$ para $o \in \{N, E, S, O\}$,
   \[
     T\bigl(\estado{f}{c}{o}, a\bigr) =
     \begin{cases}
@@ -45,17 +45,17 @@ Dado un laberinto rectangular de $F$ filas y $C$ columnas (con fila $0$ superior
   \[
     G\estado{f}{c}{o} \iff (f, c) = (f_g, c_g),
   \]
-  independiente de la orientación $o$ con la que el agente alcance la celda objetivo.
+  sin importar con qué orientación llegue el carro a la celda final.
 
   \item \textbf{Función de costo por paso ($c(s, a, s')$):}
   \[
     c(s, F, s') = c_F = 1.0, \qquad c(s, L, s') = c(s, R, s') = c_{\text{giro}} > 0,
   \]
-  donde $c_F$ (\texttt{COSTO\_AVANCE}) normaliza el tiempo de avance de una celda y $c_{\text{giro}}$ (\texttt{COSTO\_GIRO}) representa el costo relativo de un giro de $\SI{90}{\degree}$.
+  donde $c_F$ (\texttt{COSTO\_AVANCE}) toma el avance de una celda como unidad y $c_{\text{giro}}$ (\texttt{COSTO\_GIRO}) expresa cuánto cuesta un giro de $\SI{90}{\degree}$ respecto a avanzar.
 \end{enumerate}
 \end{definicion}
 
-La \cref{fig:espacio-estados} ilustra la estructura local del grafo de estados dentro de una celda y muestra cómo el parámetro $c_{\text{giro}}$ altera la ruta óptima cuando existen trayectorias alternativas con distinto balance entre avances y giros.
+La \cref{fig:espacio-estados} muestra las transiciones dentro de una celda y un ejemplo concreto donde cambiar $c_{\text{giro}}$ hace que BFS y UCS/A* elijan caminos distintos.
 
 \begin{figure}[H]
   \centering
@@ -64,38 +64,29 @@ La \cref{fig:espacio-estados} ilustra la estructura local del grafo de estados d
   \label{fig:espacio-estados}
 \end{figure}
 
-\subsubsection{Sensibilidad de la ruta óptima al parámetro \texttt{COSTO\_GIRO}}
+\subsubsection{Sensibilidad de la ruta al parámetro \texttt{COSTO\_GIRO}}
 
-El valor por defecto en el código fuente (\archivo{pc/modelo.py}) es $c_{\text{giro}} = 0.5$, fijado inicialmente a partir de la razón nominal $T_{\text{giro90}} / T_{\text{celda}} = 400 / 800$. Sin embargo, las pruebas empíricas en pista documentadas en \archivo{docs/HANDOFF.md} \cite{handoff2026doc} muestran que un giro controlado de $\SI{90}{\degree}$ con giroscopio MPU6050 y pulsos de corrección tarda $t_{\text{giro}} \approx \SIrange{1.0}{1.5}{s}$, mientras que avanzar una celda toma $t_{\text{celda}} \approx \SIrange{0.6}{0.8}{s}$, lo que corresponde a un costo relativo real $c_{\text{giro}} \approx 1.5\text{--}2.0$ (y hasta $2.5$ en el extremo superior).
+En \archivo{pc/modelo.py} dejamos al comienzo $c_{\text{giro}} = 0.5$ porque la estimación inicial de tiempos era $400/800\;\si{\milli\second}$. Sin embargo, cuando cronometramos el carro real~\cite{handoff2026doc}, resultó al revés: un giro controlado con MPU6050 y pulsos tarda $t_{\text{giro}} \approx \SIrange{1.0}{1.5}{s}$, mientras que avanzar una celda toma $t_{\text{celda}} \approx \SIrange{0.6}{0.8}{s}$. Eso pone el costo real entre $1.5$ y $2.0$ (y hasta $2.5$ si el giro requiere varios pulsos).
 
-Esta diferencia tiene un impacto directo en la planificación, como se observa en el ejemplo de la \cref{fig:espacio-estados-costo} desde $s_0 = \estado{0}{0}{S}$ hasta la meta $(1, 2)$:
-\begin{itemize}[leftmargin=1.6em,itemsep=2pt]
-  \item \textbf{Ruta 1} (\texttt{L F R F L F}): recorre $3$ celdas y ejecuta $3$ giros ($6$ acciones en total), con costo $3.0 + 3 c_{\text{giro}}$.
-  \item \textbf{Ruta 2} (\texttt{F F L F F L F}): recorre $5$ celdas y ejecuta $2$ giros ($7$ acciones en total), con costo $5.0 + 2 c_{\text{giro}}$.
-\end{itemize}
-BFS selecciona siempre la Ruta~1 porque minimiza el número total de acciones ($6 < 7$). Con el parámetro por defecto $c_{\text{giro}} = 0.5$, UCS y A* coinciden con BFS ($4.5 < 6.0$). En cambio, cuando $c_{\text{giro}} > 2.0$ ---por ejemplo $c_{\text{giro}} = 2.5$ con $t_{\text{giro}} = \SI{1.5}{s}$ y $t_{\text{celda}} = \SI{0.6}{s}$---, la Ruta~2 cuesta $10.0$ frente a $10.5$ de la Ruta~1, por lo que UCS y A* prefieren recorrer dos celdas adicionales para ahorrar un giro completo.
+El efecto sobre la ruta se ve claro en la \cref{fig:espacio-estados-costo}, saliendo de $s_0 = \estado{0}{0}{S}$ hacia $(1, 2)$. La Ruta~1 (\texttt{L F R F L F}) recorre $3$ celdas y hace $3$ giros ($6$ acciones, costo $3.0 + 3 c_{\text{giro}}$); la Ruta~2 (\texttt{F F L F F L F}) recorre $5$ celdas pero solo hace $2$ giros ($7$ acciones, costo $5.0 + 2 c_{\text{giro}}$). BFS siempre escoge la Ruta~1 porque tiene menos acciones ($6 < 7$). Con $c_{\text{giro}} = 0.5$, UCS y A* coinciden con BFS ($4.5 < 6.0$). Pero en cuanto $c_{\text{giro}}$ supera $2.0$ (por ejemplo $2.5$, cuando $t_{\text{giro}} = \SI{1.5}{s}$ y $t_{\text{celda}} = \SI{0.6}{s}$), la Ruta~2 baja a $10.0$ frente a $10.5$, así que UCS y A* prefieren andar dos celdas extra para ahorrarse un giro completo.
 
 % ----------------------------------------------------------------------------
-\subsection{Enfoque Deliberativo y Taxonomía de Algoritmos}
+\subsection{Planificación sobre mapa conocido y clasificación de algoritmos}
 \label{subsec:enfoque-taxonomia}
 
-El sistema implementa \textbf{búsqueda deliberativa sobre mapa conocido}: el PC transmite la grilla completa del laberinto antes de iniciar el movimiento y el planificador calcula la secuencia completa de acciones $F/L/R$ sin interactuar físicamente durante la búsqueda \cite{arquitectura2026doc}. Este enfoque se distingue de algoritmos de exploración reactiva o incremental en línea (como \textit{wall follower} o \textit{Flood Fill} dinámico), donde el agente descubre las paredes celda a celda y replanifica tras cada percepción.
+El agente no explora un laberinto desconocido a ciegas como un \textit{wall follower} o un \textit{Flood Fill} en línea. El mapa entra completo antes de arrancar y el planificador resuelve la secuencia entera de acciones $F/L/R$ antes de mover las ruedas~\cite{arquitectura2026doc}.
 
-Dentro del marco de búsqueda en grafos \cite{russell2021aima}, los planificadores del proyecto se clasifican en dos familias según usen o no conocimiento heurístico de la meta, y se etiquetan mediante el atributo \texttt{optimiza} en \archivo{pc/planners/}:
-\begin{itemize}[leftmargin=1.6em,itemsep=2pt]
-  \item \textbf{Búsqueda no informada:} \textbf{BFS} (\texttt{optimiza = "acciones"}), \textbf{UCS / Dijkstra} (\texttt{optimiza = "costo"}) y \textbf{DFS} (\texttt{optimiza = None}).
-  \item \textbf{Búsqueda informada:} \textbf{Greedy Best-First} (\texttt{optimiza = None}) y \textbf{A*} (\texttt{optimiza = "costo"}).
-\end{itemize}
+Siguiendo la clasificación habitual de búsqueda en grafos~\cite{russell2021aima}, en \archivo{pc/planners/} separamos los cinco algoritmos según usen o no heurística, y cada clase declara en el atributo \texttt{optimiza} qué promete garantizar: entre los no informados tenemos BFS (\texttt{optimiza = "acciones"}), UCS / Dijkstra (\texttt{optimiza = "costo"}) y DFS (\texttt{optimiza = None}); entre los informados, Greedy Best-First (\texttt{optimiza = None}) y A* (\texttt{optimiza = "costo"}).
 
 % ----------------------------------------------------------------------------
-\subsection{Diseño Detallado y Pseudocódigos}
+\subsection{Diseño y pseudocódigos de los algoritmos}
 \label{subsec:algoritmos-detalle}
 
-Todos los algoritmos comparten el orden canónico de expansión $(F, L, R)$ y la verificación de meta al extraer un estado de la frontera, lo que asegura determinismo ante empates de prioridad.
+Los cinco algoritmos expanden los sucesores en el mismo orden $(F, L, R)$ y comprueban la meta al sacar el nodo de la frontera. Esa convención evita diferencias artificiales al contar \texttt{expandidos} y mantiene resultados deterministas cuando hay empates.
 
-\subsubsection{Búsqueda en Anchura (BFS) \badgeok}
+\subsubsection{Búsqueda en anchura (BFS)}
 
-Implementado en \archivo{pc/planners/bfs.py} y portado al firmware (\archivo{src/planner/bfs.cpp}), BFS explora el grafo por capas de profundidad creciente mediante una cola FIFO (\texttt{collections.deque} en Python; arreglo circular estático \texttt{cola[MAX\_ESTADOS]} en C++). Como se detalla en el \cref{alg:bfs}, cada estado se marca como visitado al encolarlo (\texttt{sig not in padres} / \texttt{visto[j] = true}) y la prueba de meta se realiza al desencolar, manteniendo la convención de conteo de \texttt{expandidos} idéntica a los algoritmos con cola de prioridad.
+BFS está implementado en \archivo{pc/planners/bfs.py} y en \archivo{src/planner/bfs.cpp} (ya validado en \texttt{main}). Recorre el grafo por capas de profundidad usando una cola FIFO (\texttt{collections.deque} en Python; arreglo estático \texttt{cola[MAX\_ESTADOS]} en C++). Como muestra el \cref{alg:bfs}, cada estado se marca visitado al meterlo a la cola (\texttt{sig not in padres} / \texttt{visto[j] = true}) y la prueba de meta ocurre al sacarlo.
 
 \begin{algorithm}[H]
   \caption{BFS sobre estados con orientación (\archivo{bfs.py} / \archivo{bfs.cpp})}
@@ -120,14 +111,14 @@ Implementado en \archivo{pc/planners/bfs.py} y portado al firmware (\archivo{src
   \Return $\varnothing$\;
 \end{algorithm}
 
-Dado que cada estado tiene a lo sumo $3$ sucesores, el número de aristas cumple $|E| \le 3|S| = 12FC$. Por tanto, la complejidad temporal y espacial de BFS es $O(|S| + |E|) = O(FC)$. Es completo en todo laberinto finito y garantiza optimalidad en \textbf{número de acciones}, aunque no minimiza el costo real cuando $c_{\text{giro}} \ne 1.0$. En el ESP32-S3 sus arreglos estáticos ocupan aproximadamente $\SI{4}{KB}$ de RAM para $16 \times 16$ celdas.
+Como cada nodo tiene a lo sumo $3$ salidas, $|E| \le 3|S| = 12FC$, así que BFS corre en tiempo y memoria $O(FC)$. Siempre encuentra solución si existe y minimiza el número de acciones, pero deja de ser óptimo en costo en cuanto $c_{\text{giro}} \ne 1.0$. En el ESP32-S3 sus arreglos estáticos ocupan unos $\SI{4}{KB}$ de RAM para $16 \times 16$.
 
-\subsubsection{Búsqueda de Costo Uniforme (UCS / Dijkstra) \badgepr}
+\subsubsection{Búsqueda de costo uniforme (UCS / Dijkstra)}
 
-Implementado en \archivo{pc/planners/ucs.py} (rama \texttt{origin/mapas/SW-05}), UCS generaliza el algoritmo de Dijkstra \cite{dijkstra1959note,russell2021aima} al grafo ponderado $\mathcal{P}$ ordenando la frontera por el costo acumulado $g(s)$ en un montículo binario (\texttt{heapq}). Para evitar reordenamientos arbitrarios cuando dos estados tienen idéntico costo $g$, cada entrada incorpora un contador entero monótono (\texttt{itertools.count()}) que impone desempate determinista FIFO.
+Implementado en \archivo{pc/planners/ucs.py} (rama \texttt{origin/mapas/SW-05}), UCS aplica Dijkstra~\cite{dijkstra1959note,russell2021aima} sobre el grafo ponderado usando un montículo binario (\texttt{heapq}) ordenado por el costo acumulado $g(s)$. A cada entrada le añadimos un contador creciente (\texttt{itertools.count()}) para desempatar en orden FIFO si dos estados empatan en $g$.
 
 \begin{algorithm}[H]
-  \caption{Búsqueda de Costo Uniforme --- UCS (\archivo{ucs.py})}
+  \caption{Búsqueda de costo uniforme: UCS (\archivo{ucs.py})}
   \label{alg:ucs}
   \KwDatos{Mapa $m$, estado inicial $s_0$, celda meta $(f_g, c_g)$, costo de giro $c_{\text{giro}}$}
   \KwResultado{Ruta de costo mínimo o $\varnothing$}
@@ -150,21 +141,21 @@ Implementado en \archivo{pc/planners/ucs.py} (rama \texttt{origin/mapas/SW-05}),
   \Return $\varnothing$\;
 \end{algorithm}
 
-Al ser todos los costos de paso estrictamente positivos ($c_F = 1.0$, $c_{\text{giro}} > 0$), UCS es completo y óptimo en costo real, con complejidad temporal $O(|E|\log|S|) = O(FC\log(FC))$ y espacial $O(FC)$. Su limitación práctica es que expande nodos en todas direcciones sin orientación hacia la meta.
+Como todos los costos de paso son positivos ($c_F = 1.0$ y $c_{\text{giro}} > 0$), UCS es completo y óptimo en costo, con tiempo $O(FC\log(FC))$ y espacio $O(FC)$. Su punto débil es el habitual: al no saber dónde está la meta, expande estados en todas las direcciones por igual.
 
-\subsubsection{Búsqueda A* y Análisis Formal de la Heurística \badgepr}
+\subsubsection{Búsqueda A* y demostración de la heurística}
 
-Implementado en \archivo{pc/planners/astar.py} (rama \texttt{origin/algo/astar}) y portado al firmware en \archivo{arduino/agente/src/planner/astar.cpp} (rama \texttt{origin/firmware/astar}), A* \cite{hart1968astar} ordena la frontera mediante $f(s) = g(s) + h(s)$. La función heurística combina la distancia Manhattan hasta $(f_g, c_g)$ con una penalización de un giro cuando el agente no apunta directamente hacia la meta:
+A* está implementado en \archivo{pc/planners/astar.py} (rama \texttt{origin/algo/astar}) y portado al firmware en \archivo{arduino/agente/src/planner/astar.cpp} (rama \texttt{origin/firmware/astar})~\cite{hart1968astar}. Ordena la frontera por $f(s) = g(s) + h(s)$, usando la distancia Manhattan más un giro adicional cuando la meta no queda en línea recta al frente del robot:
 \begin{equation}
   h(f, c, o) =
   \begin{cases}
     0 & \text{si } (f, c) = (f_g, c_g), \\
     (|f_g - f| + |c_g - c|) \cdot c_F & \text{si } \mathrm{al\_frente}(f, c, o, f_g, c_g), \\
-    (|f_g - f| + |c_g - c|) \cdot c_F + c_{\text{giro}} & \text{en caso contrario},
+    (|f_g - f| + |c_g - c|) \cdot c_F + c_{\text{giro}} & \text{en caso contrario}.
   \end{cases}
   \label{eq:heuristica-astar}
 \end{equation}
-donde, siendo $\Delta f = f_g - f$, $\Delta c = c_g - c$ y $(u_f, u_c) = (\Delta f(o), \Delta c(o))$, el predicado booleano $\mathrm{al\_frente}$ se define exactamente como en \archivo{astar.py} y \archivo{astar.cpp}:
+Con $\Delta f = f_g - f$, $\Delta c = c_g - c$ y $(u_f, u_c) = (\Delta f(o), \Delta c(o))$, el predicado $\mathrm{al\_frente}$ coincide exactamente con la lógica escrita en \archivo{astar.py} y \archivo{astar.cpp}:
 \begin{equation}
   \mathrm{al\_frente}(f, c, o, f_g, c_g) \iff
   \begin{cases}
@@ -176,11 +167,11 @@ donde, siendo $\Delta f = f_g - f$, $\Delta c = c_g - c$ y $(u_f, u_c) = (\Delta
 
 \begin{proposicion}[Admisibilidad de $h$]
 \label{prop:admisibilidad}
-Para todo estado $s = \estado{f}{c}{o} \in S$ y todo $c_{\text{giro}} \ge 0$, la heurística de la \cref{eq:heuristica-astar} satisface $0 \le h(s) \le h^*(s)$, donde $h^*(s)$ es el costo mínimo real desde $s$ hasta la meta $(f_g, c_g)$.
+Para todo estado $s = \estado{f}{c}{o} \in S$ y todo $c_{\text{giro}} \ge 0$, la heurística de la \cref{eq:heuristica-astar} cumple $0 \le h(s) \le h^*(s)$, donde $h^*(s)$ es el costo mínimo real desde $s$ hasta la meta $(f_g, c_g)$.
 \end{proposicion}
 
 \begin{proof}
-Si $(f, c) = (f_g, c_g)$, entonces $h(s) = 0 = h^*(s)$. Si $(f, c) \ne (f_g, c_g)$, toda trayectoria válida en el laberinto debe ejecutar al menos $d_{\text{Man}}(s) = |f_g - f| + |c_g - c|$ acciones de avance $F$ (pues cada $F$ modifica una coordenada en $\pm 1$ y $L/R$ no alteran $(f, c)$), aportando un costo mínimo de $d_{\text{Man}}(s) \cdot c_F$. Además, si $\neg\mathrm{al\_frente}(s)$, la meta se encuentra detrás, perpendicularmente a un costado, o en una fila y columna distintas simultáneamente. Mientras no se ejecute al menos un giro ($L$ o $R$), el robot solo puede desplazarse a lo largo del rayo en dirección $(u_f, u_c)$, que no interseca $(f_g, c_g)$; por tanto, cualquier trayectoria hasta la meta requiere al menos un giro de costo $c_{\text{giro}}$, concluyéndose $h(s) = d_{\text{Man}}(s) \cdot c_F + c_{\text{giro}} \le h^*(s)$.
+Si $(f, c) = (f_g, c_g)$, entonces $h(s) = 0 = h^*(s)$. Si $(f, c) \ne (f_g, c_g)$, cualquier camino válido necesita al menos $d_{\text{Man}}(s) = |f_g - f| + |c_g - c|$ avances $F$ (cada $F$ cambia una coordenada en $\pm 1$ y girar no cambia la celda), lo que suma al menos $d_{\text{Man}}(s) \cdot c_F$. Además, si $\neg\mathrm{al\_frente}(s)$, la meta está detrás, a un lado o en otra fila y columna a la vez. Sin girar al menos una vez, el robot solo puede moverse por el rayo en dirección $(u_f, u_c)$, que no pasa por $(f_g, c_g)$. Por tanto toda trayectoria hasta la meta incluye al menos un giro de costo $c_{\text{giro}}$, y queda $h(s) = d_{\text{Man}}(s) \cdot c_F + c_{\text{giro}} \le h^*(s)$.
 \end{proof}
 
 \begin{proposicion}[Consistencia de $h$]
@@ -189,15 +180,15 @@ La heurística $h$ de la \cref{eq:heuristica-astar} es consistente (monótona): 
 \end{proposicion}
 
 \begin{proof}
-La condición $h(\text{meta}) = 0$ es inmediata por definición. Sea $s = \estado{f}{c}{o}$ con $(f, c) \ne (f_g, c_g)$ y $d = |f_g - f| + |c_g - c| \ge 1$. Analizamos los tres tipos de transición válida:
+Que $h(\text{meta}) = 0$ sale directo de la definición. Sea $s = \estado{f}{c}{o}$ con $(f, c) \ne (f_g, c_g)$ y $d = |f_g - f| + |c_g - c| \ge 1$. Revisamos los tres casos posibles:
 \begin{enumerate}[leftmargin=1.6em,itemsep=2pt]
-  \item \textbf{Giro ($a \in \{L, R\}$):} $(f', c') = (f, c)$, luego $d(s') = d$. En el caso más desfavorable $\neg\mathrm{al\_frente}(s)$ y $\mathrm{al\_frente}(s')$, por lo que $h(s) - h(s') \le (d c_F + c_{\text{giro}}) - d c_F = c_{\text{giro}} = c(s, a, s')$.
-  \item \textbf{Avance hacia la meta ($a = F$ con $d(s') = d - 1$):} si $s'$ es meta ($d = 1$), necesariamente $s$ estaba adyacente y orientado hacia la meta ($\mathrm{al\_frente}(s)$), luego $h(s) = c_F = c(s, F, s') + h(s')$. Si $s'$ no es meta ($d \ge 2$), el avance a lo largo de $(u_f, u_c)$ no puede hacer que la meta pase de no estar al frente a estarlo ($\neg\mathrm{al\_frente}(s) \implies \neg\mathrm{al\_frente}(s')$), ya que si se encuentra en otra línea o detrás en la misma línea, avanzar en la dirección $o$ mantiene dicha relación geométrica. Así, el término $+c_{\text{giro}}$ presente en $h(s)$ también aparece en $h(s')$, y $h(s) - h(s') \le c_F = c(s, F, s')$.
-  \item \textbf{Avance alejándose de la meta ($a = F$ con $d(s') = d + 1$):} al alejarse de $(f_g, c_g)$ en la dirección $o$, la meta nunca queda al frente en $s'$ ($\neg\mathrm{al\_frente}(s')$), de modo que $h(s') = (d + 1)c_F + c_{\text{giro}}$. Por tanto, $h(s) \le d c_F + c_{\text{giro}} < (d + 2)c_F + c_{\text{giro}} = c(s, F, s') + h(s')$.
+  \item \textbf{Giro ($a \in \{L, R\}$):} $(f', c') = (f, c)$, así que $d(s') = d$. En el caso límite pasa de $\neg\mathrm{al\_frente}(s)$ a $\mathrm{al\_frente}(s')$, con lo que $h(s) - h(s') \le (d c_F + c_{\text{giro}}) - d c_F = c_{\text{giro}} = c(s, a, s')$.
+  \item \textbf{Avance acercándose ($a = F$ con $d(s') = d - 1$):} si $s'$ ya es la meta ($d = 1$), entonces $s$ estaba justo al lado mirando hacia ella ($\mathrm{al\_frente}(s)$), luego $h(s) = c_F = c(s, F, s') + h(s')$. Si $d \ge 2$, avanzar en la dirección $(u_f, u_c)$ nunca puede hacer que la meta pase de no estar al frente a quedar al frente ($\neg\mathrm{al\_frente}(s) \implies \neg\mathrm{al\_frente}(s')$), porque si está en otra línea o detrás en la misma línea esa relación se conserva. Entonces el término $+c_{\text{giro}}$ de $h(s)$ sigue presente en $h(s')$, y $h(s) - h(s') \le c_F = c(s, F, s')$.
+  \item \textbf{Avance alejándose ($a = F$ con $d(s') = d + 1$):} al alejarse en dirección $o$, la meta nunca queda al frente en $s'$ ($\neg\mathrm{al\_frente}(s')$), así que $h(s') = (d + 1)c_F + c_{\text{giro}}$. Luego $h(s) \le d c_F + c_{\text{giro}} < (d + 2)c_F + c_{\text{giro}} = c(s, F, s') + h(s')$.
 \end{enumerate}
 \end{proof}
 
-Además de la demostración analítica, el conjunto de pruebas \archivo{pc/tests/test\_comparar.py} verifica empíricamente la desigualdad triangular $h(s) \le c(s, a, s') + h(s')$ sobre todos los estados y transiciones válidas de todos los mapas del repositorio para $c_{\text{giro}} \in \{0.5, 1.0, 2.0\}$. Al ser consistente, la primera extracción de cada estado en el \cref{alg:astar} garantiza su costo óptimo $g(s)$, por lo que A* nunca necesita reabrir nodos cerrados y preserva optimalidad y completitud con menor expansión que UCS.
+Además de esta demostración, \archivo{pc/tests/test\_comparar.py} revisa $h(s) \le c(s, a, s') + h(s')$ sobre todos los estados y transiciones de cada mapa del repo para $c_{\text{giro}} \in \{0.5, 1.0, 2.0\}$. Como $h$ es consistente, la primera vez que el \cref{alg:astar} saca un estado del montículo ya tiene su costo mínimo $g(s)$, no hace falta reabrir nodos cerrados y A* expande menos estados que UCS manteniendo la solución óptima.
 
 \begin{algorithm}[H]
   \caption{A* sobre estados con orientación (\archivo{astar.py} / \archivo{astar.cpp})}
@@ -224,21 +215,19 @@ Además de la demostración analítica, el conjunto de pruebas \archivo{pc/tests
   \Return $\varnothing$\;
 \end{algorithm}
 
-En la implementación embebida \archivo{astar.cpp}, tres decisiones garantizan identidad bit a bit con Python: (i) los costos $g$ y $f$ se almacenan en precisión doble (\texttt{double}), evitando divergencias de redondeo frente al tipo \texttt{float} de Python; (ii) los empates de $f$ se resuelven por orden de inserción (\texttt{uint16\_t orden}); y (iii) la frontera utiliza un montículo binario estático de tamaño \texttt{MAX\_FRONTERA = 3 * MAX\_ESTADOS + 1} ($\sim\SI{60}{KB}$ en SRAM para $16 \times 16$), acotando las inserciones a lo sumo una por arista saliente y evitando usar la pila del bucle principal.
+Al portar A* a \archivo{astar.cpp} cuidamos tres detalles para no perder paridad con Python: los costos $g$ y $f$ van en \texttt{double} (igual que el \texttt{float} de Python, evitando empates distintos por redondeo en \texttt{float32}), los empates de $f$ salen por orden de inserción (\texttt{uint16\_t orden}) y la frontera es un montículo binario estático de tamaño \texttt{MAX\_FRONTERA = 3 * MAX\_ESTADOS + 1} ($\sim\SI{60}{KB}$ en SRAM para $16 \times 16$), acotando las inserciones a una por arista saliente.
 
-\subsubsection{Búsqueda Voraz Primero el Mejor (Greedy Best-First) \badgepr}
+\subsubsection{Búsqueda voraz (Greedy Best-First) y búsqueda en profundidad (DFS)}
 
-Implementado en \archivo{pc/planners/greedy.py} (rama \texttt{origin/algo/greedy}), Greedy ordena la frontera exclusivamente por la heurística $h(s)$ (\cref{eq:heuristica-astar}), ignorando por completo el costo acumulado $g(s)$, con desempate FIFO y marcado de visitados al encolar. En laberintos abiertos o corredores alineados con la meta expande muy pocos nodos; sin embargo, no es óptimo (\texttt{optimiza = None}): si un callejón sin salida apunta directamente hacia $(f_g, c_g)$, Greedy lo explora por completo antes de retroceder y puede elegir rodeos subóptimos.
+Greedy está en \archivo{pc/planners/greedy.py} (rama \texttt{origin/algo/greedy}). Usa exactamente la misma heurística $h(s)$ de la \cref{eq:heuristica-astar}, pero tira a la basura el costo acumulado $g(s)$, con desempate FIFO y marcado al encolar. En pasillos limpios que apuntan a la meta vuela con pocos nodos expandidos; en cambio, si aparece un callejón sin salida orientado hacia $(f_g, c_g)$, entra hasta el fondo antes de devolverse y suele dar rutas largas (\texttt{optimiza = None}).
 
-\subsubsection{Búsqueda en Profundidad (DFS) \badgepend}
-
-Especificado en la tarea \texttt{SW-04} del registro del proyecto \cite{excel2026organizacion} (pendiente de integración), DFS sustituye la cola FIFO de BFS por una pila LIFO junto con un conjunto de estados visitados. Dado que el espacio de estados es finito, el control de ciclos asegura completitud, pero su comportamiento depende fuertemente del orden de expansión $(F, L, R)$ y no ofrece garantías de optimalidad ni en acciones ni en costo.
+DFS corresponde a la tarea \texttt{SW-04} del Excel~\cite{excel2026organizacion} (todavía pendiente de PR). Cambia la cola FIFO de BFS por una pila LIFO con conjunto de visitados: en grafos finitos siempre encuentra una salida si existe, pero su ruta depende por completo del orden $(F, L, R)$ y no garantiza optimalidad ni en acciones ni en costo.
 
 % ----------------------------------------------------------------------------
-\subsection{Criterios de Selección y Comparación Teórica}
+\subsection{Criterios de selección y comparación teórica}
 \label{subsec:comparacion-teorica}
 
-La \cref{tab:comparacion-algoritmos} resume las propiedades teóricas y el estado de implementación de los cinco algoritmos del proyecto.
+La \cref{tab:comparacion-algoritmos} resume las propiedades de los cinco algoritmos y dónde vive cada uno en el repositorio.
 
 \begin{table}[H]
   \centering
@@ -263,21 +252,12 @@ La \cref{tab:comparacion-algoritmos} resume las propiedades teóricas y el estad
   \end{flushleft}
 \end{table}
 
-Desde el punto de vista de ingeniería embebida, \textbf{BFS} fue seleccionado como el primer planificador a bordo por su simplicidad estructural, consumo fijo de $\sim\SI{4}{KB}$ de SRAM, ausencia de asignación dinámica y garantía de encontrar una ruta válida en cualquier laberinto resoluble. No obstante, una vez validada la ejecución física, \textbf{A*} constituye la evolución natural en el microcontrolador (\texttt{SW-07}, rama \texttt{origin/firmware/astar}): al minimizar el costo ponderado real con una heurística consistente, reduce los giros innecesarios (y con ello el tiempo cronometrado en pista) manteniendo el mismo contrato de ruta y un consumo estático acotado ($\sim\SI{60}{KB}$ frente a $\SI{512}{KB}$ de SRAM del ESP32-S3).
+Empezamos poniendo BFS en el ESP32-S3 porque es corto, gasta solo $\sim\SI{4}{KB}$ de SRAM estática y nos dejó probar el carro entero sin preocuparnos por bugs del montículo binario. Una vez el carro rodó bien, el paso lógico fue llevar A* a bordo (\texttt{SW-07}, rama \texttt{origin/firmware/astar}): sigue respetando el mismo contrato de ruta \cmd{F/L/R}, cabe holgado en SRAM ($\sim\SI{60}{KB}$ sobre $\SI{512}{KB}$ disponibles) y ahora sí puede ahorrarse giros cuando $c_{\text{giro}}$ refleja los tiempos reales de pista.
 
 % ----------------------------------------------------------------------------
-\subsection{Extensibilidad y Garantía de Paridad Python--C++}
+\subsection{Extensibilidad y verificación de paridad Python--C++}
 \label{subsec:extensibilidad-paridad}
 
-La arquitectura del software desacopla la definición de los algoritmos de la ejecución y las pruebas mediante el patrón de registro automático en \archivo{pc/planners/base.py}:
-\begin{itemize}[leftmargin=1.6em,itemsep=2pt]
-  \item Toda estrategia hereda de la clase abstracta \texttt{Planner}, declara los atributos \texttt{nombre} y \texttt{optimiza} (\texttt{"acciones"}, \texttt{"costo"} o \texttt{None}), e implementa \texttt{planear(mapa, inicio, meta)} devolviendo un objeto \texttt{Resultado} con movimientos, secuencia de estados, costo total y \texttt{nodos\_expandidos}.
-  \item El decorador \texttt{@registrar} inscribe la clase en el diccionario global \texttt{REGISTRO}; así, tanto la herramienta CLI \archivo{pc/planear.py} como la batería genérica de \texttt{pytest} descubren cualquier algoritmo nuevo sin modificar archivos existentes.
-\end{itemize}
+Para que cada integrante pudiera escribir su algoritmo en un PR independiente sin pisar archivos de los demás, \archivo{pc/planners/base.py} define la clase abstracta \texttt{Planner} y el decorador \texttt{@registrar}. Basta crear un archivo nuevo en \archivo{pc/planners/}, heredar de \texttt{Planner}, fijar \texttt{nombre} y \texttt{optimiza} y devolver un \texttt{Resultado} con movimientos, estados, costo y \texttt{nodos\_expandidos}. Tanto \archivo{pc/planear.py} como \texttt{pytest} lo descubren solos en \texttt{REGISTRO}.
 
-La corrección y la paridad exacta entre el entorno de simulación (Python) y el firmware embebido (C++) se verifican en tres niveles automatizados:
-\begin{enumerate}[leftmargin=1.6em,itemsep=2pt]
-  \item \textbf{Validación funcional y de optimalidad (\archivo{pc/tests/test\_planners.py}):} para todo algoritmo en \texttt{REGISTRO} y todo mapa en \archivo{maps/}, verifica que cada movimiento sea físicamente válido (sin atravesar paredes), que el último estado alcance la celda meta y que el costo coincida con la suma de acciones. Los algoritmos con \texttt{optimiza = "costo"} se validan contra un Dijkstra de referencia (\texttt{mejor\_costo}) y los de \texttt{optimiza = "acciones"} contra \texttt{menos\_acciones}.
-  \item \textbf{Compilación cruzada del código C++:} mediante \archivo{pc/\allowbreak tests/\allowbreak test\_planner\_cpp.py} y \archivo{pc/\allowbreak tests/\allowbreak cpp/\allowbreak planear\_host.cpp}, dado que \archivo{arduino/\allowbreak agente/\allowbreak src/\allowbreak planner/} no depende de \texttt{Arduino.h}, la suite compila el código embebido directamente en el PC y exige igualdad exacta en cadena de ruta, conteo de acciones, costo y \texttt{nodos\_expandidos} frente a Python. En la rama \texttt{origin/\allowbreak firmware/\allowbreak astar}, esta verificación se extiende a \texttt{bfs} y \texttt{astar} sobre $60$ mapas aleatorios de hasta $16 \times 16$ con ciclos y empates múltiples.
-  \item \textbf{Verificación en línea al desplegar (\archivo{pc/enviar.py}):} al transmitir un mapa al ESP32-S3 mediante el comando \texttt{MAPA ... FIN}, el script calcula localmente la ruta de referencia en Python y la compara contra la respuesta \texttt{RUTA} devuelta por el microcontrolador, reportando error si ambas cadenas difieren.
-\end{enumerate}
+La paridad entre Python y el C++ del carro se revisa en tres capas. Primero, \archivo{pc/tests/test\_planners.py} prueba todos los algoritmos registrados contra todos los mapas en \archivo{maps/}, comprobando que ningún movimiento atraviese paredes y comparando las promesas de \texttt{optimiza} contra un Dijkstra (\texttt{mejor\_costo}) y un BFS (\texttt{menos\_acciones}) de referencia. Segundo, \archivo{pc/\allowbreak tests/\allowbreak test\_planner\_cpp.py} compila directamente \archivo{arduino/\allowbreak agente/\allowbreak src/\allowbreak planner/} en el PC usando \archivo{pc/\allowbreak tests/\allowbreak cpp/\allowbreak planear\_host.cpp} (sin \texttt{Arduino.h}) y exige coincidencia exacta en ruta, acciones, costo y \texttt{nodos\_expandidos}; en \texttt{origin/\allowbreak firmware/\allowbreak astar} eso cubre tanto \texttt{bfs} como \texttt{astar} sobre $60$ mapas aleatorios de hasta $16 \times 16$ con ciclos y empates. Por último, cuando corremos \archivo{pc/enviar.py} hacia el carro real, el script calcula la ruta en Python y la contrasta con la línea \texttt{RUTA} que devuelve el ESP32-S3, fallando de inmediato si no son idénticas.

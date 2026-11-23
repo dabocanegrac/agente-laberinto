@@ -1,13 +1,13 @@
-\section{Hardware y Materiales}
+\section{Hardware y materiales}
 \label{sec:hardware}
 
-La plataforma física del agente solucionador de laberintos se construyó alrededor de un chasis diferencial de dos ruedas motrices (2WD) gobernado por un microcontrolador ESP32-S3~\cite{espressif2024esp32s3}. De acuerdo con la evolución del proyecto, esta sección documenta de forma integral tanto la configuración base validada en la rama principal (\badgeok) como las mejoras de alimentación y telemetría de batería integradas en la rama \archivo{origin/firmware/volver} (\badgepr)~\cite{repo2026agentelaberinto,arquitectura2026doc}.
+El robot está armado sobre un chasis diferencial de dos ruedas motrices (2WD) controlado por un ESP32-S3~\cite{espressif2024esp32s3}. En esta sección detallamos tanto la configuración base con la que corrimos las primeras pruebas en \texttt{main} como los cambios de potencia y lectura de batería que añadimos después en la rama \archivo{origin/firmware/volver}~\cite{repo2026agentelaberinto,arquitectura2026doc}.
 
 % ============================================================================
-\subsection{Arquitectura física y lista detallada de materiales (BOM)}
+\subsection{Lista de materiales (BOM) y elección de componentes}
 \label{subsec:bom}
 
-El diseño del hardware responde a tres restricciones del entorno de operación: (i) autonomía energética y de cómputo a bordo sin cables durante el recorrido, (ii) capacidad de lectura analógica simultánea con la operación de Wi-Fi a \SI{2.4}{\giga\hertz} y (iii) suficiente claridad dimensional para navegar celdas impresas o encintadas de \SI{24}{\centi\meter}. La \Cref{tab:bom} resume la lista completa de materiales (BOM) y sus especificaciones técnicas clave.
+Cuando armamos el carro tuvimos que equilibrar tres cosas: que rodara sin cables, que pudiera leer sensores analógicos con el Wi-Fi prendido a \SI{2.4}{\giga\hertz} y que cupiera con holgura dentro de celdas de \SI{24}{\centi\meter}. La \Cref{tab:bom} recoge todos los componentes que terminaron en el chasis.
 
 \begin{table}[H]
   \centering
@@ -23,7 +23,7 @@ El diseño del hardware responde a tres restricciones del entorno de operación:
       ESP32-S3 N16R8 (44 pines) + Shield de expansión &
       1 &
       \SI{16}{\mega\byte} Flash, \SI{8}{\mega\byte} OPI PSRAM, Wi-Fi \SI{2.4}{\giga\hertz}, OTA (\cmd{app3M\_fat9M\_16MB}), USB-C UART CH343 (\cmd{DEC-06}), jack DC \SIrange{6.5}{9}{\volt} &
-      Planificación BFS a bordo, control de lazo cerrado, consola TCP y OTA \\
+      Planificación a bordo, control en lazo cerrado, consola TCP y OTA \\
     \addlinespace[3pt]
     Estructura mecánica &
       Chasis 2WD + ruedas + rueda loca &
@@ -82,24 +82,24 @@ El diseño del hardware responde a tres restricciones del entorno de operación:
   \end{tabularx}
 \end{table}
 
-\paragraph{Compromiso electromecánico de los actuadores y el driver.}
-Los motorreductores N20-10 seleccionados operan a \SI{500}{RPM} con llantas de \SI{43}{\milli\meter} de diámetro, lo que produce una velocidad tangencial nominal en vacío de:
+\paragraph{El problema de los motores N20 rápidos y el L298N.}
+Con llantas de \SI{43}{\milli\meter}, unos N20-10 de \SI{500}{RPM} dan en vacío una velocidad lineal de:
 \begin{equation}
   v_{\text{nom}} = \frac{\pi \cdot D \cdot \text{RPM}}{60} = \frac{\pi \cdot \SI{0.043}{\meter} \cdot 500}{60} \approx \SI{1.125}{\meter\per\second}.
   \label{eq:vel-nominal}
 \end{equation}
-Esta alta relación de velocidad conlleva un torque reducido y la ausencia de encoders de cuadratura en los ejes~\cite{siegwart2011autonomous}. Por su parte, el puente H bipolar L298N introduce una caída de tensión interna de $\approx \SI{2}{\volt}$ en sus etapas Darlington~\cite{st2000l298n}: con un pack de $4\times\text{AA}$ (\SI{6}{\volt}), los motores reciben apenas $\approx \SI{4}{\volt}$ efectivos. En consecuencia, durante los giros sobre el eje (donde la fricción estática lateral de ambas ruedas se opone al movimiento) el firmware requiere un ciclo útil elevado (\cmd{pwm\_giro = 230} sobre 255, ya que por debajo de \num{170} los motores pitan y no rompen la inercia), mientras que el avance se realiza a \cmd{pwm = 180} y la aproximación final a pared a \cmd{pwm\_aprox = 140}. Además, al carecer de odometría en las ruedas, el desplazamiento por celda depende de tiempo calibrado (\cmd{t\_celda}), corregido por la integración del giroscopio MPU6050 en el eje $Z$ y re-sincronizado en cada pared mediante el sensor frontal~\cite{arquitectura2026doc}.
+Sobre el papel parecen ágiles, pero en un laberinto pequeño eso jugó en contra. Demasiada velocidad implica poco par, y además estos motores venían sin encoders~\cite{siegwart2011autonomous}. A eso se sumó el L298N: sus transistores bipolares Darlington se comen cerca de \SI{2}{\volt}~\cite{st2000l298n}, así que con cuatro pilas AA (\SI{6}{\volt}) a los motores apenas les llegan unos \SI{4}{\volt}. En los giros sobre el eje, donde las dos ruedas arrastran fricción lateral, por debajo de \cmd{pwm\_giro = 170} los motores solo pitan y no se mueven; tuvimos que subir el arranque a \cmd{230} sobre 255, mientras que para avanzar usamos \cmd{pwm = 180} y \cmd{pwm\_aprox = 140} al llegar a una pared. Como no medimos distancia en las ruedas, el avance depende de tiempo calibrado (\cmd{t\_celda}), corregido en dirección por el MPU6050 y reajustado al toparse con paredes frontales~\cite{arquitectura2026doc}.
 
-\paragraph{Configuración crítica del L298N y señalización WS2812.}
-En el módulo L298N es indispensable retirar los tres \emph{jumpers} (\cmd{ENA}, \cmd{ENB} y \cmd{5V}) e inyectar \SI{5}{\volt} regulados desde el shield de expansión directamente al borne \cmd{5V} del driver. Con $4\times\text{AA}$ (\SI{6}{\volt}), el regulador lineal interno del L298N no alcanza la tensión mínima de entrada para sostener \SI{5}{\volt} en la lógica; si dicho cable se desconecta, el puente H queda sin alimentación lógica y los motores no responden~\cite{handoff2026doc}. El Motor~A (\cmd{OUT1--OUT2}) acciona la llanta derecha y el Motor~B (\cmd{OUT3--OUT4}) la izquierda.
+\paragraph{Cableado del L298N y LED de estado.}
+En el L298N hay que quitar los tres \emph{jumpers} (\cmd{ENA}, \cmd{ENB} y \cmd{5V}) y llevar \SI{5}{\volt} desde el shield al borne \cmd{5V} del driver. Con $4\times\text{AA}$ su regulador interno no alcanza a entregar \SI{5}{\volt}; si ese cable se suelta, la lógica del L298N se apaga y el carro deja de moverse aunque las pilas estén llenas~\cite{handoff2026doc}. El Motor~A (\cmd{OUT1--OUT2}) mueve la llanta derecha y el Motor~B (\cmd{OUT3--OUT4}) la izquierda.
 
-Para diagnóstico visual sin consola, el LED RGB WS2812 conectado al GPIO~48 (que en la placa clon requiere cerrar con estaño el puente de soldadura marcado \cmd{RGB}) indica cinco estados: \textbf{azul} sin mapa cargado, \textbf{verde} ruta lista, \textbf{blanco} en movimiento durante \cmd{GO}, \textbf{rojo} si el último reinicio fue por \emph{brownout} (\cmd{ESP\_RST\_BROWNOUT}) y \textbf{magenta} durante una actualización inalámbrica OTA~\cite{repo2026agentelaberinto}.
+Para no depender siempre de la consola, usamos el LED RGB WS2812 del GPIO~48 (en esta placa clon hubo que cerrar con estaño el puente marcado \cmd{RGB}). Azul significa que no hay mapa cargado, verde que la ruta está lista, blanco que el carro está ejecutando \cmd{GO}, rojo que el último reinicio fue por \emph{brownout} (\cmd{ESP\_RST\_BROWNOUT}) y magenta que está recibiendo una actualización OTA~\cite{repo2026agentelaberinto}.
 
 % ============================================================================
-\subsection{Geometría del robot y compatibilidad dimensional con el laberinto (\cmd{DEC-02})}
+\subsection{Geometría del robot y dimensiones del laberinto (\cmd{DEC-02})}
 \label{subsec:geometria}
 
-La \Cref{fig:geometria-carro} presenta el plano técnico acotado del robot centrado dentro de una celda estándar del laberinto físico. El origen de coordenadas $(0,0)$ se ubica en el punto medio del eje motriz de las ruedas, coincidiendo con el centro geométrico de la celda.
+La \Cref{fig:geometria-carro} muestra las medidas del robot centrado en una celda estándar, tomando el punto medio del eje motriz como origen $(0,0)$.
 
 \begin{figure}[H]
   \centering
@@ -109,26 +109,23 @@ La \Cref{fig:geometria-carro} presenta el plano técnico acotado del robot centr
 \end{figure}
 
 \begin{decision}{DEC-02: Tamaño de celda y grosor de línea}
-  Se estableció una celda estándar de \SI{24}{\centi\meter} entre centros de líneas con un grosor de línea de \SI{2}{\centi\meter} y un margen exterior blanco de \SI{5}{\centi\meter}. Esta geometría garantiza compatibilidad mecánica y sensorial directa con las dimensiones del robot:
-  \begin{itemize}[leftmargin=1.5em, itemsep=2pt]
-    \item \textbf{Espacio blanco interior:} $24 - 2 = \SI{22}{\centi\meter}$ libres entre los bordes internos de dos paredes paralelas.
-    \item \textbf{Holgura de sensores laterales:} con \SI{16}{\centi\meter} entre las puntas de los TCRT5000 laterales, queda una tolerancia simétrica de $\frac{22 - 16}{2} = \SI{3}{\centi\meter}$ por lado antes de pisar una línea negra.
-    \item \textbf{Holgura de ruedas:} con un ancho total con llantas de \SI{15}{\centi\meter}, la holgura lateral de las ruedas es de $\frac{22 - 15}{2} = \SI{3.5}{\centi\meter}$ por lado, evitando que pisen la cinta durante avances rectos.
-    \item \textbf{Alineación frontal y margen exterior:} el sensor frontal se sitúa a \SI{16}{\centi\meter} por delante del eje motriz. Dado que media celda mide \SI{12}{\centi\meter}, cuando el eje está centrado el sensor frontal sobresale \SI{4}{\centi\meter} más allá del centro de la línea frontal (y la punta del chasis de \SI{20}{\centi\meter} de largo total queda $\sim\SI{5}{\centi\meter}$ por fuera de la línea). Por ello, la hoja del laberinto incorpora un margen blanco mínimo de \SI{5}{\centi\meter} en todo el perímetro para que el carro no se salga de la superficie blanca al alinearse contra una pared de borde~\cite{arquitectura2026doc}.
-  \end{itemize}
-  \textbf{Contraste con el impreso de prueba (26/10/2026):} para caber en un rollo de plotter de \SI{91}{\centi\meter} con una grilla $4\times 4$ (\archivo{maps/simulados/prueba\_4x4.txt}), se imprimió una versión reducida de $91 \times \SI{91}{\centi\meter}$ con celda de \SI{22}{\centi\meter}, línea de \SI{2}{\centi\meter} y margen de \SI{0.5}{\centi\meter}. En dicha pista el blanco interior se reduce a \SI{20}{\centi\meter}, dejando solo \SI{2}{\centi\meter} de holgura por sensor lateral y \SI{2.5}{\centi\meter} por rueda~\cite{handoff2026doc}.
+Fijamos una celda de \SI{24}{\centi\meter} entre centros de líneas, trazo de \SI{2}{\centi\meter} y margen exterior blanco de \SI{5}{\centi\meter}. Así quedan $24 - 2 = \SI{22}{\centi\meter}$ de blanco entre paredes. Como los TCRT5000 laterales están separados \SI{16}{\centi\meter}, el carro tiene $\frac{22 - 16}{2} = \SI{3}{\centi\meter}$ de holgura por lado antes de pisar una línea, y las ruedas (\SI{15}{\centi\meter} de ancho total) cuentan con $\SI{3.5}{\centi\meter}$ por lado.
+
+El margen de \SI{5}{\centi\meter} alrededor del borde no es estético: el sensor frontal sobresale \SI{16}{\centi\meter} del eje y media celda mide \SI{12}{\centi\meter}, así que al quedar centrado el sensor pasa \SI{4}{\centi\meter} más allá de la línea (y la punta del chasis unos \SI{5}{\centi\meter}). Sin ese margen blanco el sensor se saldría del papel en las paredes del perímetro~\cite{arquitectura2026doc}.
+
+Para la primera prueba del 26/10/2026 sobre \archivo{maps/simulados/prueba\_4x4.txt} tuvimos que encoger la pista a $91 \times \SI{91}{\centi\meter}$ (celda de \SI{22}{\centi\meter}, línea de \SI{2}{\centi\meter}, margen de \SI{0.5}{\centi\meter}) para que cupiera en un rollo de plotter de \SI{91}{\centi\meter}. Eso dejó apenas \SI{2}{\centi\meter} de margen por sensor y \SI{2.5}{\centi\meter} por rueda~\cite{handoff2026doc}, lo que confirmó que \SI{24}{\centi\meter} es el tamaño cómodo para la demo.
 \end{decision}
 
 % ============================================================================
-\subsection{Caracterización óptica IR y selección de materiales del laberinto (\cmd{DEC-03})}
+\subsection{Respuesta infrarroja y elección del material del laberinto (\cmd{DEC-03})}
 \label{subsec:ir-materiales}
 
-Los tres sensores reflectivos TCRT5000~\cite{vishay2012tcrt5000} se leen mediante el conversor ADC1 del ESP32-S3 con resolución de 12~bits (\numrange{0}{4095}). El firmware normaliza cada lectura cruda a una escala entera de \numrange{0}{1000} mediante la transformación:
+Los tres TCRT5000~\cite{vishay2012tcrt5000} entran al ADC1 de 12~bits (\numrange{0}{4095}). En el firmware normalizamos cada lectura a un entero entre $0$ y $1000$:
 \begin{equation}
   S_{\text{norm}} = \left\lfloor \frac{S_{\text{crudo}} \cdot 1000}{4095} \right\rfloor,
   \label{eq:adc-norm}
 \end{equation}
-donde valores bajos corresponden a alta reflexión infrarroja (papel blanco) y valores altos corresponden a absorción IR o ausencia de superficie reflectante (cinta negra mate o aire). La \Cref{tab:lecturas-ir} sintetiza las mediciones empíricas registradas en las sesiones del 23/10 y 26/10/2026.
+donde los números bajos corresponden a blanco (mucha reflexión IR) y los altos a negro mate o al sensor en el aire. La \Cref{tab:lecturas-ir} reúne las lecturas reales que medimos el 23/10 y el 26/10/2026.
 
 \begin{table}[H]
   \centering
@@ -142,59 +139,50 @@ donde valores bajos corresponden a alta reflexión infrarroja (papel blanco) y v
     \midrule
     Papel blanco (impreso / base) & \numrange{35}{57} / \numrange{24}{85} & 23/10 -- 26/10 & Blanco (alta reflexión IR) \\
     Cinta aislante negra mate & \numrange{250}{860} & 23/10/2026 & Negro (absorbe IR; válida para detección) \\
-    Cinta aislante sobre impreso & \numrange{400}{690} & 26/10/2026 & Negro robusto (margen $> \num{300}$ sobre blanco) \\
-    Aire (robot levantado) & \num{1000} & 23/10/2026 & Saturación máxima por ausencia de retorno IR \\
-    Tinta negra de plotter & $\approx$~\numrange{24}{85} & 26/10/2026 & \textbf{Inválida:} lectura idéntica al papel blanco \\
-    \emph{Mousepad} negro brillante & $< \num{200}$ & 26/10/2026 & \textbf{Inválida:} superficie especular refleja IR como blanco \\
+    Cinta aislante sobre impreso & \numrange{400}{690} & 26/10/2026 & Negro claro (margen $> \num{300}$ sobre blanco) \\
+    Aire (robot levantado) & \num{1000} & 23/10/2026 & Saturación por ausencia de retorno IR \\
+    Tinta negra de plotter & $\approx$~\numrange{24}{85} & 26/10/2026 & \textbf{No sirve:} lectura igual al papel blanco \\
+    \emph{Mousepad} negro brillante & $< \num{200}$ & 26/10/2026 & \textbf{No sirve:} refleja el IR como si fuera blanco \\
     \bottomrule
   \end{tabularx}
 \end{table}
 
-Con base en estas mediciones, el umbral de binarización en \archivo{parametros.h} se fijó en \cmd{umbral = 200}, ubicado en el punto medio entre el máximo del papel blanco (\num{85}) y el mínimo de la cinta aislante (\numrange{250}{400}).
+Con estos valores pusimos el umbral inicial en \cmd{umbral = 200} en \archivo{parametros.h}, a mitad de camino entre el blanco más alto (\num{85}) y la cinta más baja (\numrange{250}{400}).
 
-\begin{hallazgo}[Hallazgo crítico del 26/10/2026: Invisibilidad IR de la tinta de plotter]
-  Durante las pruebas sobre el mapa impreso en plotter, los tres sensores TCRT5000 reportaron sobre la tinta negra prácticamente los mismos valores que sobre el papel blanco, incluso al acercar manualmente el emisor-receptor a pocos milímetros del papel. La tinta del plotter es transparente/reflectante en la longitud de onda infrarroja (\SI{950}{\nano\meter}) del TCRT5000, lo que hace imposible detectar paredes impresas directamente~\cite{repo2026agentelaberinto,arquitectura2026doc}.
+\begin{hallazgo}[Hallazgo del 26/10/2026: la tinta del plotter es invisible al IR]
+  Cuando pusimos el carro sobre el primer laberinto recién salido del plotter, los tres TCRT5000 pasaron por encima de las líneas negras sin enterarse: marcaban entre \num{24} y \num{85}, igual que en el papel blanco, incluso bajando el sensor a pocos milímetros. Esa tinta refleja en la banda de \SI{950}{\nano\meter} igual que el papel. Algo parecido nos pasó con un \emph{mousepad} negro brillante~\cite{repo2026agentelaberinto,arquitectura2026doc}.
 \end{hallazgo}
 
 \begin{decision}{DEC-03: Material físico del laberinto}
-  El impreso del plotter generado por \archivo{pc/imprimir.py} se utiliza exclusivamente como plantilla geométrica guía; todas las líneas se forran con \textbf{cinta aislante negra mate} de $\approx \SI{1.9}{\centi\meter}$ centrada sobre la traza de \SI{2}{\centi\meter} (sin arrugas y prolongando $\sim\SI{1}{\centi\meter}$ en las esquinas), o bien se arma la pista con tiras de cartulina negra mate previamente verificadas con lectura $> 400$~\cite{arquitectura2026doc}.
+  El plano del plotter salido de \archivo{pc/imprimir.py} sirve como guía de medidas, pero las paredes se forran con cinta aislante negra mate ($\approx\SI{1.9}{\centi\meter}$ centrada sobre el trazo de \SI{2}{\centi\meter}, sin arrugas y prolongada $\sim\SI{1}{\centi\meter}$ en las esquinas), o bien se arma todo con tiras de cartulina negra mate probadas antes con el sensor ($> 400$)~\cite{arquitectura2026doc}.
   \par\smallskip
-  \textbf{Limitación frente a luz solar (\cmd{HW-04} \badgepend):} los sensores se encuentran montados a $\sim\SI{1.5}{\centi\meter}$ del suelo, altura a la que la radiación solar directa en exteriores satura el fototransistor. Como mejora planificada (\cmd{HW-04}), se contempla reducir la altura de montaje a \SIrange{5}{8}{\milli\meter} e incorporar una faldita opaca perimetral para apantallar la luz ambiente~\cite{arquitectura2026doc}.
+  Queda un punto abierto para exteriores (\cmd{HW-04}): hoy los sensores cuelgan a $\sim\SI{1.5}{\centi\meter}$ del piso, una altura en la que el sol directo puede tapar el contraste. El plan antes de la demo al aire libre es bajarlos a \SIrange{5}{8}{\milli\meter} y ponerles una faldita de cartón alrededor~\cite{arquitectura2026doc}.
 \end{decision}
 
 % ============================================================================
-\subsection{Sistema de alimentación y gestión de potencia}
+\subsection{Alimentación y caídas de voltaje}
 \label{subsec:alimentacion}
 
-Para aislar al microcontrolador de los picos de corriente inductivos generados por el arranque y frenado por contramarcha de los motores N20-10, el robot emplea un \textbf{doble dominio energético con tierra común (GND) obligatoria}:
-\begin{enumerate}[leftmargin=1.5em, itemsep=2pt]
-  \item \textbf{Dominio lógico (\SI{9}{\volt}):} una batería de \SI{9}{\volt} conectada al jack DC del shield de expansión (\SIrange{6.5}{9}{\volt}) alimenta el regulador de la placa ESP32-S3, el MPU6050 (\SI{3.3}{\volt}), los tres TCRT5000 (\SI{3.3}{\volt}) y la lógica de \SI{5}{\volt} del L298N. \textbf{Regla crítica de seguridad:} nunca conectar el cable USB-C y la batería de \SI{9}{\volt} al mismo tiempo para evitar corrientes inversas hacia el puerto del computador~\cite{handoff2026doc}.
-  \item \textbf{Dominio de potencia (motores):}
-  \begin{itemize}[leftmargin=1.2em, itemsep=1pt]
-    \item \emph{Configuración base \badgeok{} (\cmd{main}):} portapilas de $4\times\text{AA}$ en serie (\SI{6}{\volt}) conectado al borne \SI{12}{\volt}/VMS del L298N.
-    \item \emph{Evolución en rama \badgepr{} (\archivo{origin/firmware/volver}):} pack 2S de celdas Li-Ion 18650 ($\approx$~\SIrange{7.8}{8.4}{\volt} a plena carga) con interruptor general en serie, que compensa la caída de $\approx \SI{2}{\volt}$ del L298N y entrega mayor torque en giros.
-  \end{itemize}
-\end{enumerate}
+Separamos la energía en dos circuitos independientes con tierra común (GND), porque los picos inductivos de los motores al arrancar y frenar reiniciaban la placa si compartían fuente. La lógica (ESP32-S3, MPU6050 y TCRT5000 a \SI{3.3}{\volt}, más la lógica de \SI{5}{\volt} del L298N) se alimenta con una batería de \SI{9}{\volt} en el jack DC del shield (\SIrange{6.5}{9}{\volt}). Hay una regla que respetamos siempre al pie de la letra: nunca conectar el cable USB-C y la batería de \SI{9}{\volt} al tiempo~\cite{handoff2026doc}. Para los motores (borne \SI{12}{\volt}/VMS del L298N), la configuración de \texttt{main} usa cuatro pilas AA en serie (\SI{6}{\volt}); en la rama \archivo{origin/firmware/volver} migramos a un pack 2S de celdas Li-Ion 18650 (\SIrange{7.8}{8.4}{\volt} con interruptor general) para recuperar el torque perdido en el L298N.
 
-\paragraph{Análisis de caídas de voltaje y prevención de \emph{brownout}.}
-En la prueba de alimentación del 23/10/2026 (\archivo{prueba\_alimentacion\_esp32s3.ino}), se observó que una batería de \SI{9}{\volt} con \SI{7.67}{\volt} en reposo provocaba un bucle infinito de reinicios por caída de tensión (\cmd{ESP\_RST\_BROWNOUT}) al activar la radio Wi-Fi, manifestado por el parpadeo continuo del LED verde TX del puente CH343. Para mitigar este fallo se aplicaron dos medidas: (i) establecer un umbral operativo de reemplazo de la batería de \SI{9}{\volt} en \SI{8.5}{\volt} (batería nueva $\approx \SI{9.5}{\volt}$), y (ii) reducir la potencia de transmisión Wi-Fi a \SI{8.5}{dBm} mediante \cmd{WiFi.setTxPower(WIFI\_POWER\_8\_5dBm)} en \archivo{agente.ino}~\cite{arquitectura2026doc}.
+La batería de \SI{9}{\volt} nos dio un susto temprano. El 23/10/2026, probando \archivo{prueba\_alimentacion\_esp32s3.ino}, una batería que medía \SI{7.67}{\volt} en reposo metió al ESP32 en un bucle infinito de reinicios (\cmd{ESP\_RST\_BROWNOUT}, con el LED verde TX del CH343 parpadeando sin parar) apenas encendía el Wi-Fi. Lo resolvimos bajando la potencia Wi-Fi a \SI{8.5}{dBm} (\cmd{WiFi.setTxPower(WIFI\_POWER\_8\_5dBm)}) y fijando la regla práctica de cambiar la batería de \SI{9}{\volt} en cuanto baje de \SI{8.5}{\volt} (nueva marca cerca de \SI{9.5}{\volt})~\cite{arquitectura2026doc}.
 
-Por su parte, en la rama \archivo{origin/firmware/volver} \badgepr{} (mediciones del 04/11/2026), el divisor resistivo en GPIO~1 permite muestrear el voltaje del pack 2S 18650 cada \SI{5}{\milli\second} durante el movimiento. Con el pack a \SI{8.0}{\volt} en reposo, se registraron caídas transitorias de $\approx \SI{0.6}{\volt}$ durante giros en el eje y de $\approx \SI{0.36}{\volt}$ al avanzar en línea recta. Para que la descarga progresiva de las celdas no altere los tiempos de avance (\cmd{t\_celda}), el firmware filtra $V_{\text{bat}}$ con una constante de tiempo de $\sim\SI{1}{\second}$ y escala dinámicamente el PWM según $(v_{\text{ref}} - v_{\text{caida}}) / (V_{\text{bat}} - v_{\text{caida}})$~\cite{repo2026agentelaberinto}.
+En la rama \archivo{origin/firmware/volver} añadimos además el divisor resistivo en GPIO~1 para leer el pack 2S cada \SI{5}{\milli\second} durante la marcha. El 04/11/2026, con el pack en \SI{8.0}{\volt} en reposo, medimos caídas de $\approx\SI{0.6}{\volt}$ en los giros y $\approx\SI{0.36}{\volt}$ al avanzar. Filtrando esa lectura con $\tau \approx \SI{1}{\second}$ y escalando el PWM por $(v_{\text{ref}} - v_{\text{caida}}) / (V_{\text{bat}} - v_{\text{caida}})$, evitamos tener que recalibrar \cmd{t\_celda} cada media hora conforme se descarga la batería~\cite{repo2026agentelaberinto}.
 
 % ============================================================================
-\subsection{Esquema de conexiones y mapa completo de pines GPIO}
+\subsection{Esquema de conexiones y mapa de pines GPIO}
 \label{subsec:esquema-pines}
 
-La \Cref{fig:cableado} ilustra el diagrama eléctrico completo de interconexión entre el ESP32-S3, el shield de expansión, el driver L298N, los actuadores, los sensores y el circuito de sensado de batería.
+La \Cref{fig:cableado} resume todas las conexiones entre la placa, el L298N, los sensores, el giroscopio y el divisor de batería.
 
 \begin{figure}[H]
   \centering
   \input{figuras/fig_cableado}
-  \caption{Diagrama eléctrico y de conexiones del robot. Se destacan la separación de dominios de potencia con tierra común (GND), los \emph{jumpers} retirados en el L298N, la alimentación lógica de \SI{5}{\volt} desde el shield y el divisor resistivo con filtro RC en GPIO~1 (\badgepr).}
+  \caption{Diagrama eléctrico y de conexiones del robot. Se muestran los dos dominios de energía con GND común, los \emph{jumpers} retirados en el L298N, los \SI{5}{\volt} lógicos desde el shield y el divisor resistivo en GPIO~1 (rama \archivo{firmware/volver}).}
   \label{fig:cableado}
 \end{figure}
 
-La asignación exacta de pines definida en \archivo{arduino/agente/src/config/pines\_esp32s3.h} se detalla en la \Cref{tab:pines-gpio}. El sentido de avance se verificó empíricamente el 23/10/2026 mediante \archivo{prueba\_motores\_esp32s3.ino}, confirmando que \cmd{IN1=HIGH, IN2=LOW} (Motor~A derecho) e \cmd{IN3=HIGH, IN4=LOW} (Motor~B izquierdo) impulsan ambas ruedas hacia adelante sin necesidad de invertir polaridades en software.
+La \Cref{tab:pines-gpio} detalla la asignación definida en \archivo{arduino/agente/src/config/pines\_esp32s3.h}. El 23/10/2026 verificamos el sentido de giro con \archivo{prueba\_motores\_esp32s3.ino}: \cmd{IN1=HIGH, IN2=LOW} (Motor~A derecho) e \cmd{IN3=HIGH, IN4=LOW} (Motor~B izquierdo) mueven las dos ruedas hacia adelante sin tener que invertir nada en código.
 
 \begin{table}[H]
   \centering
@@ -223,8 +211,7 @@ La asignación exacta de pines definida en \archivo{arduino/agente/src/config/pi
   \end{tabularx}
 \end{table}
 
-\paragraph{Pines restringidos en el ESP32-S3 N16R8.}
-Todos los sensores analógicos se ubicaron en el bloque \textbf{ADC1} (GPIO~1, 4, 5 y 6) porque el bloque ADC2 del ESP32-S3 entra en conflicto con el controlador Wi-Fi~\cite{espressif2024esp32s3}. Adicionalmente, la \Cref{tab:pines-restringidos} lista los pines reservados del encapsulado que no deben asignarse a periféricos externos.
+Todas las entradas analógicas (GPIO~1, 4, 5 y 6) van en ADC1 porque en el ESP32-S3 el bloque ADC2 no puede usarse mientras el Wi-Fi está activo~\cite{espressif2024esp32s3}. La \Cref{tab:pines-restringidos} recuerda además qué pines del módulo dejamos libres por restricciones internas del SoC.
 
 \begin{table}[H]
   \centering
@@ -236,7 +223,7 @@ Todos los sensores analógicos se ubicaron en el bloque \textbf{ADC1} (GPIO~1, 4
     \toprule
     \textbf{Pines GPIO} & \textbf{Función reservada} & \textbf{Motivo de restricción} \\
     \midrule
-    GPIO 35, 36, 37 & OPI PSRAM (\SI{8}{\mega\byte}) & Bus octal interno de memoria; su uso provoca fallos de arranque o corrupción \\
+    GPIO 35, 36, 37 & OPI PSRAM (\SI{8}{\mega\byte}) & Bus octal interno de memoria; usarlos bloquea el arranque o corrompe datos \\
     GPIO 0, 3, 45, 46 & Pines de \emph{strapping} & Definen el modo de arranque y voltaje de flash al encender el SoC \\
     GPIO 19, 20 & USB nativo (D$-$ / D$+$) & Reservados para la interfaz USB OTG nativa del ESP32-S3 \\
     GPIO 43, 44 & UART0 (TX / RX) & Conectados al puente USB-UART CH343 para consola serial y flasheo \\
@@ -244,8 +231,7 @@ Todos los sensores analógicos se ubicaron en el bloque \textbf{ADC1} (GPIO~1, 4
   \end{tabularx}
 \end{table}
 
-\paragraph{Registro fotográfico del ensamble físico.}
-Las siguientes reservas gráficas corresponden a las fotografías reales del prototipo ensamblado y del detalle de cableado inferior, pendientes de inserción final en el documento maestro.
+Por último, la \Cref{fig:fotos-hardware} deja reservados los dos espacios donde iremos pegando las fotografías reales del chasis armado y del cableado inferior.
 
 \begin{figure}[H]
   \centering

@@ -8,17 +8,17 @@
   % Banda superior institucional
   {\color{unalverde}\rule{\textwidth}{2.5pt}}\\[0.35cm]
   {\large\bfseries\color{unalverde} UNIVERSIDAD NACIONAL DE COLOMBIA}\\[0.15cm]
-  {\normalsize\color{gristexto} Facultad de Ingeniería --- Curso de Inteligencia Artificial}\\[0.25cm]
+  {\normalsize\color{gristexto} Facultad de Ingeniería, Curso de Inteligencia Artificial}\\[0.25cm]
   {\color{grisborde}\rule{\textwidth}{0.8pt}}
 
   \vspace{2.2cm}
 
   {\Large\color{azulclaro}\bfseries INFORME TÉCNICO DEL PROYECTO}\\[0.5cm]
 
-  {\Huge\bfseries\color{azuldoc} Agente Autónomo Solucionador\\[0.25cm] de Laberintos 2D en ESP32-S3}\\[0.6cm]
+  {\Huge\bfseries\color{azuldoc} Agente autónomo solucionador\\[0.25cm] de laberintos 2D en ESP32-S3}\\[0.6cm]
 
-  {\large\itshape Diseño físico, control embebido con fusión sensorial IR--IMU,\\
-  planificación autónoma a bordo y comparación de algoritmos de búsqueda}
+  {\large\itshape Hardware, control embebido con sensores IR y giroscopio,\\
+  planificación a bordo y comparación de algoritmos de búsqueda}
 
   \vspace{1.6cm}
 
@@ -52,8 +52,8 @@
   \vfill
 
   {\color{grisborde}\rule{0.7\textwidth}{0.6pt}}\\[0.3cm]
-  {\normalsize\color{gristexto} Colombia --- Noviembre de 2026}\\[0.1cm]
-  {\footnotesize\color{gristexto} Documento vivo: incluye resultados preliminares validados y secciones marcadas \emph{[POR COMPLETAR]} sujetas a las pruebas finales en pista.}
+  {\normalsize\color{gristexto} Colombia, noviembre de 2026}\\[0.1cm]
+  {\footnotesize\color{gristexto} Versión en curso: incluye pruebas ya corridas en pista y espacios marcados \emph{[POR COMPLETAR]} para los ensayos finales.}
 \end{titlepage}
 
 % Página de Resumen (Abstract)
@@ -62,13 +62,13 @@
 \section*{Resumen}
 \addcontentsline{toc}{section}{Resumen}
 
-Este informe documenta de manera integral el diseño, la implementación y el análisis de un \textbf{agente físico autónomo solucionador de laberintos 2D} desarrollado para el curso de Inteligencia Artificial de la Universidad Nacional de Colombia~\cite{repo2026agentelaberinto,excel2026organizacion}. El sistema traslada los algoritmos clásicos de búsqueda en espacios de estados desde un entorno teórico de simulación hacia un robot móvil diferencial de dos ruedas (2WD) gobernado por un microcontrolador \textbf{ESP32-S3 N16R8}, operando bajo el ciclo completo \emph{percibir $\rightarrow$ planear $\rightarrow$ actuar} de forma totalmente autónoma a bordo.
+En este informe presentamos el diseño, la construcción y las pruebas de un agente físico que resuelve laberintos 2D, desarrollado para el curso de Inteligencia Artificial de la Universidad Nacional de Colombia~\cite{repo2026agentelaberinto,excel2026organizacion}. La meta era sacar los algoritmos clásicos de búsqueda del papel y correrlos en un carro diferencial de dos ruedas (2WD) con un microcontrolador ESP32-S3 N16R8, sin depender de un computador durante el recorrido.
 
-A diferencia de arquitecturas teleoperadas en las que un computador externo calcula la ruta y dicta comandos paso a paso, el proyecto adopta una \textbf{arquitectura autónoma embarcada} (\texttt{DEC-05}): el PC únicamente transfiere el mapa en formato de grilla $(2n+1)\times(2m+1)$ de ceros y unos por Wi-Fi (TCP puerto~23) o puerto serie, y el propio microcontrolador valida el laberinto, lo persiste en memoria no volátil (\texttt{Preferences}/NVS), ejecuta la búsqueda sobre el espacio de estados con orientación $\estado{f}{c}{o}$ y lleva a cabo el recorrido completo incluso ante la pérdida total de la conexión inalámbrica. Para compensar la ausencia de \emph{encoders} en los motorreductores N20-10 y mitigar la deriva acumulativa propia del avance por tiempo, el robot integra tres sensores ópticos reflectivos infrarrojos (\textbf{TCRT5000}) ---dos laterales para centrado y uno frontal para alineación geométrica contra paredes--- junto con un giroscopio inercial \textbf{MPU6050} muestreado a \SI{500}{\hertz} en una tarea FreeRTOS dedicada que gobierna giros absolutos de \SI{90}{\degree} y mantiene el rumbo en línea recta.
+Desde el principio descartamos un esquema teleoperado en el que el PC dicta cada movimiento (\texttt{DEC-05}). En su lugar, el PC solo envía el mapa en una grilla $(2n+1)\times(2m+1)$ de ceros y unos por Wi-Fi (TCP puerto~23) o por cable serial. A partir de ahí el carro trabaja solo: valida el archivo, lo guarda en memoria no volátil (\texttt{Preferences}/NVS), planea la ruta sobre el espacio de estados con orientación $\estado{f}{c}{o}$ y la ejecuta aunque se caiga el Wi-Fi. Como los motorreductores N20-10 no tienen \emph{encoders}, avanzar solo por tiempo acumula error rápido. Para corregirlo usamos tres sensores infrarrojos TCRT5000 (dos laterales para no salirse del carril y uno frontal para cuadrarse contra las paredes) junto con un giroscopio MPU6050 leído a \SI{500}{\hertz} en una tarea aparte de FreeRTOS, que controla los giros de \SI{90}{\degree} y mantiene el rumbo recto.
 
-El ecosistema de software en Python (\texttt{pc/}) actúa como banco de referencia, generador de mapas aleatorios reproducibles (\texttt{pc/generar.py}), trazador de planos a escala 1:1 y guías de armado (\texttt{pc/imprimir.py}), comparador sistemático de métricas (\texttt{pc/comparar.py}) e interfaz web de demostración en vivo (\texttt{pc/demo.py}). Sobre el mismo contrato de estados y costos relativos entre avance ($c_F = 1.0$) y giro ($c_{\text{giro}}$), se formulan y comparan algoritmos no informados (\textbf{BFS}, \textbf{UCS} y \textbf{DFS}) e informados (\textbf{Greedy Best-First} y \textbf{A*} con heurística Manhattan aumentada por orientación, demostrada admisible y consistente), garantizando mediante compilación cruzada y pruebas automatizadas la \textbf{paridad exacta} entre las implementaciones de referencia en Python y los planificadores en C++ embarcados (BFS en \texttt{main} y A* en integración).
+En el computador dejamos las herramientas de apoyo en Python (\texttt{pc/}): algoritmos de referencia, el generador de mapas aleatorios (\texttt{pc/generar.py}), el script que produce los planos a escala 1:1 y listas de corte (\texttt{pc/imprimir.py}), el comparador de métricas (\texttt{pc/comparar.py}) y una interfaz web para la demo (\texttt{pc/demo.py}). Sobre el mismo modelo de estados y costos ($c_F = 1.0$ al avanzar y $c_{\text{giro}}$ al girar) comparamos BFS, UCS, DFS, Greedy Best-First y A* con una heurística Manhattan ajustada por orientación que demostramos admisible y consistente. Además, compilamos el código C++ del carro dentro de \texttt{pytest} para comprobar que BFS (ya en \texttt{main}) y A* (en rama de integración) produzcan exactamente la misma ruta, costo y nodos expandidos que Python.
 
-El informe detalla todas las decisiones de ingeniería (\texttt{DEC-01} a \texttt{DEC-06} y evoluciones posteriores en ramas activas como el control PI de velocidad angular, el paso a baterías 2S~18650 con compensación dinámica de voltaje y el comando \texttt{VOLVER}), presenta los resultados preliminares ya verificados en pista (\textbf{6 de 6 corridas exitosas} en el mapa de prueba de $4\times 4$ en $\approx\SI{14}{\second}$) y deja estructurada la Sección~6 con marcadores explícitos \emph{[POR COMPLETAR]} para incorporar las pruebas finales en los mapas físicos definitivos y en exteriores.
+Recogemos aquí las decisiones tomadas durante el proyecto (\texttt{DEC-01} a \texttt{DEC-06}) y los cambios que surgieron al chocar con el hardware real, como el paso a baterías 2S~18650 con compensación por voltaje, el lazo PI para los giros y el comando \texttt{VOLVER}. También reportamos las pruebas preliminares ya verificadas en pista (6 de 6 corridas hasta la meta en el mapa de prueba de $4\times 4$, en unos \SI{14}{\second}) y dejamos la Sección~6 preparada con bloques \emph{[POR COMPLETAR]} para añadir los datos de los mapas físicos definitivos y los ensayos en exterior.
 
 \vspace{0.6cm}
 \noindent\textbf{Palabras clave:} Inteligencia Artificial aplicada, agente autónomo, planificación de rutas, búsqueda en espacio de estados, BFS, UCS, A*, ESP32-S3, MPU6050, TCRT5000, robótica móvil 2WD.

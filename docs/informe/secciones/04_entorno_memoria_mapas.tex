@@ -1,40 +1,35 @@
-\section{Representación del Entorno, Memoria y Mapas}
+\section{Representación del entorno, memoria y mapas}
 \label{sec:entorno-mapas}
 
 \subsection{Representación externa del laberinto (\texttt{DEC-01})}
 \label{subsec:repr-externa}
 
-La representación externa del laberinto constituye el contrato compartido entre las herramientas de Python en el PC (\archivo{pc/mapa.py}) y el firmware del vehículo (\archivo{arduino/agente/src/planner/mapa.cpp}). Cada mapa se almacena en un archivo de texto plano compuesto por dos directivas de cabecera y una grilla binaria de dimensiones $(2n+1)\times(2m+1)$ para un laberinto de $n$ filas por $m$ columnas de celdas \cite{arquitectura2026doc}:
-\begin{itemize}[leftmargin=1.4em,nosep]
-  \item \textbf{Cabeceras:} \cmd{inicio f c N|E|S|O} define la celda y orientación inicial del agente; \cmd{meta f c} define la celda objetivo. La fila $0$ corresponde al extremo superior (Norte) y la columna $0$ al extremo izquierdo (Oeste).
-  \item \textbf{Comentarios y espacios:} todo texto posterior al carácter \cmd{\#} se ignora, así como los espacios o tabulaciones dentro de cada fila de la grilla.
-  \item \textbf{Mapeo geométrico:} la celda lógica $(f, c)$ ocupa la posición impar-impar $(2f+1, 2c+1)$ de la grilla. Las posiciones con una coordenada par y otra impar codifican las paredes entre celdas adyacentes (\cmd{1} = pared, \cmd{0} = libre), mientras que las coordenadas par-par $(2f, 2c)$ representan los postes estructurales de las esquinas.
-\end{itemize}
+Tanto Python (\archivo{pc/mapa.py}) como el carro (\archivo{arduino/agente/src/planner/mapa.cpp}) leen exactamente el mismo archivo de texto~\cite{arquitectura2026doc}. Un mapa de $n$ filas por $m$ columnas tiene dos líneas de cabecera y una grilla de $(2n+1)\times(2m+1)$ caracteres entre \cmd{0} y \cmd{1}. Las cabeceras \cmd{inicio f c N|E|S|O} y \cmd{meta f c} definen salida y llegada en coordenadas de celda, con la fila $0$ arriba (Norte) y la columna $0$ a la izquierda (Oeste). Cualquier texto tras \cmd{\#} se ignora, igual que los espacios dentro de cada fila. En la grilla, la celda $(f, c)$ cae en la posición impar-impar $(2f+1, 2c+1)$; las posiciones con una coordenada par y otra impar guardan las paredes entre celdas (\cmd{1} = pared, \cmd{0} = paso libre), y las posiciones par-par $(2f, 2c)$ son los postes de las esquinas.
 
 \begin{decision}{DEC-01: Formato del mapa en grilla de 0/1}
-Se compararon dos formatos de entrada para los archivos de mapa: (a) \textit{matriz directa de máscaras de bits por celda} (enteros $0\text{--}15$), compacta pero propensa a errores humanos al no garantizar simetría entre paredes compartidas por dos celdas vecinas; y (b) \textit{grilla textual explícita} $(2n+1)\times(2m+1)$ de \cmd{0} y \cmd{1}. Se adoptó la opción (b) porque resulta visualmente legible para inspección y edición manual, impide por construcción inconsistencias de paredes asimétricas y permite que tanto el PC como el ESP32-S3 lean exactamente el mismo archivo sin pasos previos de conversión \cite{arquitectura2026doc}.
+Al definir el formato discutimos dos opciones: escribir directamente una matriz de enteros del $0$ al $15$ con las máscaras de bits por celda, o usar la grilla explícita $(2n+1)\times(2m+1)$ de \cmd{0} y \cmd{1}. Elegimos la grilla por una razón práctica: se puede leer y editar a mano viendo la forma del laberinto, y hace imposible equivocarse poniendo pared al Este de una celda pero olvidando la pared al Oeste de su vecina. Además, evita pasos de conversión porque el ESP32-S3 y el PC leen el mismo archivo~\cite{arquitectura2026doc}.
 \end{decision}
 
-Para garantizar la paridad entre simulación y ejecución real, la función \cmd{desde\_grilla} de \archivo{pc/mapa.py} y la clase \cmd{LectorMapa} en \archivo{mapa.cpp} aplican exactamente las mismas reglas de validación:
+Para que ningún mapa mal formado pase en un lado y falle en el otro, \cmd{desde\_grilla} en \archivo{pc/mapa.py} y \cmd{LectorMapa} en \archivo{mapa.cpp} aplican exactamente las mismas cinco comprobaciones:
 \begin{enumerate}[leftmargin=1.4em,nosep]
-  \item Todas las filas de la grilla deben tener igual ancho; tanto el alto como el ancho deben ser impares y $\ge 3$.
-  \item Todo el perímetro exterior ($y \in \{0, \text{alto}-1\}$ o $x \in \{0, \text{ancho}-1\}$) debe estar cerrado con \cmd{1}.
-  \item Ninguna posición de celda $(2f+1, 2c+1)$ puede contener un \cmd{1}.
-  \item Tanto \cmd{inicio} como \cmd{meta} deben existir y caer dentro de $[0, n-1]\times[0, m-1]$, con orientación en \{\cmd{N}, \cmd{E}, \cmd{S}, \cmd{O}\}.
-  \item En el firmware, las constantes \cmd{MAX\_FILAS = MAX\_COLS = 16} (\archivo{mapa.h}) acotan la dimensión máxima a $16\times 16$ celdas (grilla de hasta $33\times 33$ caracteres).
+  \item Todas las filas deben tener igual ancho; alto y ancho deben ser impares y $\ge 3$.
+  \item Todo el borde exterior ($y \in \{0, \text{alto}-1\}$ o $x \in \{0, \text{ancho}-1\}$) debe estar cerrado con \cmd{1}.
+  \item Ninguna celda $(2f+1, 2c+1)$ puede contener un \cmd{1}.
+  \item Deben existir \cmd{inicio} y \cmd{meta} dentro de $[0, n-1]\times[0, m-1]$, con orientación en \{\cmd{N}, \cmd{E}, \cmd{S}, \cmd{O}\}.
+  \item En el ESP32-S3, \cmd{MAX\_FILAS = MAX\_COLS = 16} (\archivo{mapa.h}) limita el tamaño a $16\times 16$ celdas (grilla máxima de $33\times 33$).
 \end{enumerate}
 
 \subsection{Representación interna, memoria estática y persistencia}
 \label{subsec:repr-interna-memoria}
 
-Una vez validada la grilla textual, ambos lectores la compilan en una matriz bidimensional compacta donde cada celda $(f, c)$ se codifica mediante una máscara de 4 bits (\textit{bitmask}):
+Una vez validada la grilla textual, los dos lectores la convierten a una matriz compacta donde cada celda $(f, c)$ guarda sus paredes en cuatro bits:
 \[
   \text{Norte } (\cmd{N}) = 1 = 2^0, \quad
   \text{Este } (\cmd{E}) = 2 = 2^1, \quad
   \text{Sur } (\cmd{S}) = 4 = 2^2, \quad
   \text{Oeste } (\cmd{O}) = 8 = 2^3.
 \]
-En C++, la estructura \cmd{planner::Mapa} almacena esta topología en una matriz fija \cmd{paredes[16][16]} de tipo \cmd{uint8\_t} (apenas \SI{256}{bytes} en SRAM), permitiendo consultar la presencia de cualquier pared en tiempo constante $O(1)$ mediante la operación bit a bit \cmd{paredes[f][c] \& (1 \textless\textless{} ori)} (\cref{fig:grilla-bitmask}).
+En C++, \cmd{planner::Mapa} guarda esa matriz en \cmd{uint8\_t paredes[16][16]} (solo \SI{256}{bytes} de SRAM), y saber si hay pared frente al carro es una operación de un ciclo: \cmd{paredes[f][c] \& (1 \textless\textless{} ori)} (\cref{fig:grilla-bitmask}).
 
 \begin{figure}[H]
 \centering
@@ -43,23 +38,18 @@ En C++, la estructura \cmd{planner::Mapa} almacena esta topología en una matriz
 \label{fig:grilla-bitmask}
 \end{figure}
 
-\paragraph{Presupuesto de memoria estática en el ESP32-S3.}
-Para evitar la fragmentación del \textit{heap} y prevenir desbordamientos de la pila (\textit{stack}) de la tarea principal \cmd{loop()}, toda la capa de planificación utiliza arreglos estáticos de tamaño acotado por $\text{MAX\_ESTADOS} = 16 \times 16 \times 4 = 1024$:
-\begin{itemize}[leftmargin=1.4em,nosep]
-  \item \textbf{BFS a bordo (\archivo{bfs.cpp} \badgeok):} reserva cuatro arreglos estáticos (\cmd{padre}, \cmd{accion}, \cmd{visto} y \cmd{cola}) de longitud $1024$, consumiendo aproximadamente \SI{4}{KB} de SRAM.
-  \item \textbf{$A^*$ a bordo (\texttt{firmware/astar}, \archivo{astar.cpp} \badgepr):} utiliza un montículo binario sobre \cmd{frontera} de capacidad $3\cdot\text{MAX\_ESTADOS}+1 = 3073$ nodos (\cmd{double f}, \cmd{uint16\_t orden}, \cmd{int16\_t estado}) además de \cmd{g[1024]} en doble precisión (\texttt{double}, necesario para mantener paridad exacta de desempates con Python), ocupando aproximadamente \SI{60}{KB} de SRAM estática.
-\end{itemize}
+\paragraph{Memoria estática y persistencia en el ESP32-S3.}
+En un microcontrolador conviene evitar el \textit{heap} y tampoco llenar el \textit{stack} del \cmd{loop()}. Por eso todos los arreglos de búsqueda son estáticos y acotados a $\text{MAX\_ESTADOS} = 16 \times 16 \times 4 = 1024$. En \archivo{bfs.cpp} (en \texttt{main}), los cuatro arreglos \cmd{padre}, \cmd{accion}, \cmd{visto} y \cmd{cola} ocupan apenas $\approx\SI{4}{KB}$ de SRAM. En \archivo{astar.cpp} (rama \texttt{firmware/astar}), la frontera usa un montículo binario estático de $3\cdot\text{MAX\_ESTADOS}+1 = 3073$ nodos (\cmd{double f}, \cmd{uint16\_t orden}, \cmd{int16\_t estado}) junto con \cmd{g[1024]} en \texttt{double} para empatar exactamente igual que Python, lo que suma $\approx\SI{60}{KB}$ de SRAM fija.
 
-\paragraph{Persistencia no volátil en NVS.}
-El firmware utiliza la librería \cmd{Preferences} del ESP32-S3 sobre el espacio de nombres (\textit{namespace}) \cmd{"agente"} para persistir en memoria Flash no volátil (NVS): el bloque binario completo del último mapa (\cmd{prefs.putBytes("mapa", \&mapa, sizeof(mapa))}), el parámetro \cmd{costo\_giro}, los parámetros de control calibrados (\cmd{SET}/\cmd{SAVE}) y las credenciales del punto de acceso secundario (\cmd{red\_ssid}, \cmd{red\_clave}). De este modo, el vehículo conserva el mapa, la calibración y la ruta tras cortes de energía o reinicios por \textit{brownout} \cite{arquitectura2026doc}.
+Para no perder el mapa ni la calibración si se apaga el carro o entra un \textit{brownout}, el firmware guarda todo en Flash no volátil (NVS) mediante \cmd{Preferences} bajo el \textit{namespace} \cmd{"agente"}: el bloque binario del mapa (\cmd{prefs.putBytes("mapa", \&mapa, sizeof(mapa))}), \cmd{costo\_giro}, los parámetros de \cmd{SET}/\cmd{SAVE} y las credenciales del \textit{hotspot} (\cmd{red\_ssid}, \cmd{red\_clave})~\cite{arquitectura2026doc}.
 
-\paragraph{Actualización de estado y alcance del mapa.}
-Es importante precisar que, en la versión actual del sistema, el mapa es completamente conocido a priori y permanece \textbf{estático} durante la ejecución: el agente no realiza mapeo ni localización simultánea (SLAM) en línea. Durante el recorrido (\cmd{GO}), el ejecutor actualiza exclusivamente su estado discreto interno \cmd{ej.pose} (celda y orientación esperadas tras cada tramo \cmd{F}, \cmd{L} o \cmd{R}) y su estimación continua de rumbo mediante \cmd{imu::rumbo()}. Sin embargo, dado que la topología emplea únicamente los 4 bits menos significativos de cada \cmd{uint8\_t} en \cmd{paredes[f][c]}, los 4 bits superiores quedan disponibles de forma natural para incorporar banderas de celda visitada o pared explorada en futuras extensiones con exploración autónoma.
+\paragraph{Alcance de la actualización del mapa.}
+En esta versión el mapa se conoce de antemano y no se modifica durante la corrida: el carro no hace SLAM ni descubre paredes nuevas. Mientras ejecuta \cmd{GO}, solo actualiza su pose discreta \cmd{ej.pose} tras cada tramo y el rumbo continuo en \cmd{imu::rumbo()}. De todas formas, como \cmd{paredes[f][c]} solo usa 4 de los 8 bits de cada \cmd{uint8\_t}, los 4 bits altos quedan libres si más adelante queremos marcar celdas visitadas o paredes descubiertas en línea.
 
-\subsection{Mapas de prueba 2D, generación aleatoria e impresión física}
+\subsection{Mapas de prueba 2D, generador aleatorio e impresión física}
 \label{subsec:mapas-generacion-impresion}
 
-La \cref{tab:mapas-repo} resume el conjunto de mapas disponibles en el repositorio, diferenciando entre pistas simuladas para evaluación algorítmica y pistas físicas diseñadas para validación en laboratorio.
+La \cref{tab:mapas-repo} lista los siete mapas creados en el repositorio, separando los de simulación de las pistas físicas pensadas para el carro.
 
 \begin{table}[H]
 \centering
@@ -73,25 +63,18 @@ La \cref{tab:mapas-repo} resume el conjunto de mapas disponibles en el repositor
 \archivo{prueba\_4x4.txt} & $4\times 4$ & \estado{0}{0}{\cmd{E}} $\rightarrow$ $(3,3)$ & \badgeok & Primera pista impresa (celda \SI{22}{cm}, margen \SI{0.5}{cm}, $91\times 91\text{ cm}$) para pruebas del 26/10/2026. \\
 \archivo{ejemplo\_5x5.txt} & $5\times 5$ & \estado{0}{0}{\cmd{E}} $\rightarrow$ $(4,4)$ & \badgeok & Mapa de referencia para \cmd{planear.py}, \cmd{enviar.py} y pruebas unitarias. \\
 \archivo{simulado\_6x6.txt} & $6\times 6$ & \estado{0}{0}{\cmd{E}} $\rightarrow$ $(5,5)$ & \badgepr{} (\texttt{mapas/SW-05}) & Laberinto aleatorio con ciclos ($p=0.2$, semilla 106). \\
-\archivo{simulado\_10x10.txt} & $10\times 10$ & \estado{0}{0}{\cmd{E}} $\rightarrow$ $(9,9)$ & \badgepr{} (\texttt{mapas/SW-05}) & Evaluación de escalabilidad intermedia ($p=0.2$, semilla 38). \\
-\archivo{simulado\_16x16.txt} & $16\times 16$ & \estado{0}{0}{\cmd{E}} $\rightarrow$ $(15,15)$ & \badgepr{} (\texttt{mapas/SW-05}) & Prueba de límite máximo de memoria en ESP32-S3 ($p=0.2$, semilla 23). \\
-\archivo{fisicos/mapa1.txt} & $4\times 3$ & \estado{0}{0}{\cmd{E}} $\rightarrow$ $(3,2)$ & \badgepr{} (\texttt{mapas/mapa2}) & Pista física (\SI{24}{cm}/celda, $84\times 108\text{ cm}$ con margen) con paredes al final de tramos rectos para realineación frontal. \\
-\archivo{fisicos/mapa2.txt} & $4\times 3$ & \estado{0}{0}{\cmd{E}} $\rightarrow$ $(3,2)$ & \badgepr{} (\texttt{mapas/mapa2}) & Pista física (\SI{24}{cm}/celda) con intersección abierta donde el agente debe girar aun teniendo camino libre al frente. \\
+\archivo{simulado\_10x10.txt} & $10\times 10$ & \estado{0}{0}{\cmd{E}} $\rightarrow$ $(9,9)$ & \badgepr{} (\texttt{mapas/SW-05}) & Evaluación intermedia de escala ($p=0.2$, semilla 38). \\
+\archivo{simulado\_16x16.txt} & $16\times 16$ & \estado{0}{0}{\cmd{E}} $\rightarrow$ $(15,15)$ & \badgepr{} (\texttt{mapas/SW-05}) & Prueba en el límite máximo de memoria del ESP32-S3 ($p=0.2$, semilla 23). \\
+\archivo{fisicos/mapa1.txt} & $4\times 3$ & \estado{0}{0}{\cmd{E}} $\rightarrow$ $(3,2)$ & \badgepr{} (\texttt{mapas/mapa2}) & Pista física (\SI{24}{cm}/celda, $84\times 108\text{ cm}$ con margen) con paredes al final de los tramos rectos para alinear con el frontal. \\
+\archivo{fisicos/mapa2.txt} & $4\times 3$ & \estado{0}{0}{\cmd{E}} $\rightarrow$ $(3,2)$ & \badgepr{} (\texttt{mapas/mapa2}) & Pista física (\SI{24}{cm}/celda) con intersección abierta: el robot debe girar aunque tenga paso libre al frente. \\
 \bottomrule
 \end{tabularx}
 \end{table}
 
-\paragraph{Generación aleatoria de mapas (\archivo{pc/generar.py} \badgepr).}
-Implementado en la rama \texttt{mapas/SW-05}, el generador construye instancias válidas de entre $1\times 1$ y $16\times 16$ celdas garantizando siempre al menos una ruta entre inicio y meta. En una primera fase ejecuta una búsqueda en profundidad (DFS) iterativa con pila explícita para tallar un árbol generador aleatorio sin ciclos sobre todas las celdas; en una segunda fase recorre las paredes internas remanentes y las abre de forma independiente con probabilidad \cmd{ciclos} $\in [0, 1]$ usando un generador pseudoaleatorio reproducible (\cmd{random.Random(semilla)}). Esto permite evaluar diferencias de costo y nodos expandidos entre algoritmos en grafos con múltiples rutas alternativas.
+Para comparar algoritmos en laberintos con varios caminos alternativos, escribimos \archivo{pc/generar.py} en la rama \texttt{mapas/SW-05}. El script crea mapas válidos entre $1\times 1$ y $16\times 16$ en dos pasos: primero talla un árbol generador sin ciclos con un DFS iterativo (lo que asegura que siempre exista al menos una ruta entre inicio y meta), y después recorre las paredes internas sobrantes abriéndolas con probabilidad \cmd{ciclos} $\in [0, 1]$ bajo una semilla fija (\cmd{random.Random(semilla)}) para que cualquier experimento se pueda repetir.
 
-\paragraph{Trazado geométrico e impresión física (\archivo{pc/imprimir.py} \badgeok).}
-Convierte cualquier mapa válido en dos documentos PDF ubicados en \archivo{build/impresion/}:
-\begin{itemize}[leftmargin=1.4em,nosep]
-  \item \textbf{Descomposición sin solapamiento (\cmd{piezas()}):} agrupa segmentos colineales horizontales en tiras continuas (\cmd{H1, H2, ...}) y recorta las tiras verticales (\cmd{V1, V2, ...}) en los postes ya cubiertos por una pieza horizontal, evitando doble espesor de cinta o cartulina.
-  \item \textbf{Optimización de corte (\cmd{tiras\_necesarias()}):} aplica una heurística \textit{First-Fit Decreasing} sobre las longitudes requeridas para minimizar el desperdicio de tiras estándar de cartulina.
-  \item \textbf{Salidas generadas:} \archivo{<mapa>\_plotter.pdf} en escala exacta $1:1$ con regla de verificación de \SI{10}{cm} en el borde, y \archivo{<mapa>\_armado.pdf} con cotas de ensamblaje y lista de piezas para montaje manual con cinta aislante o cartulina negra mate.
-\end{itemize}
+Del lado físico, \archivo{pc/imprimir.py} (ya en \texttt{main}) convierte cualquier archivo de mapa en dos PDF dentro de \archivo{build/impresion/}. Primero \cmd{piezas()} junta las paredes horizontales colineales en tiras enteras (\cmd{H1, H2, ...}) y recorta las verticales (\cmd{V1, V2, ...}) donde tocan una horizontal para no encimar dos capas de cinta o cartulina. Luego \cmd{tiras\_necesarias()} acomoda esos cortes con una heurística \textit{First-Fit Decreasing} para calcular cuántos pliegos de cartulina o metros de cinta se necesitan. Las dos salidas son \archivo{<mapa>\_plotter.pdf} (escala 1:1 con una regla de \SI{10}{cm} en el borde para comprobar que la impresora no encogió el plano) y \archivo{<mapa>\_armado.pdf} (cotas y lista de corte para armar el laberinto a mano).
 
 \begin{hallazgo}[Invisibilidad infrarroja de la tinta de plotter (26/10/2026)]
-Durante las pruebas iniciales sobre el plano impreso en plotter de \archivo{prueba\_4x4.txt}, se comprobó que los sensores reflectivos TCRT5000 (\SI{950}{nm}) leían la tinta negra del plotter con valores prácticamente idénticos al papel blanco ($\approx 24\text{--}85$ en escala normalizada $[0,1000]$, frente a $400\text{--}690$ sobre cinta aislante negra mate) \cite{arquitectura2026doc}. En consecuencia, el plano impreso a escala $1:1$ se conserva como plantilla geométrica de precisión y todas las líneas de pared se recubren con cinta aislante negra mate de $\approx\SI{1.9}{cm}$ (centrada sobre la línea guía de \SI{2}{cm}).
+Al probar el primer plano impreso de \archivo{prueba\_4x4.txt}, los TCRT5000 (\SI{950}{nm}) leyeron la tinta negra del plotter casi igual que el papel blanco ($\approx 24\text{--}85$ frente a $400\text{--}690$ sobre cinta aislante negra mate)~\cite{arquitectura2026doc}. Por eso usamos el plano impreso solo como plantilla de medidas y forramos todas las líneas con cinta aislante negra mate de $\approx\SI{1.9}{cm}$ centrada sobre el trazo de \SI{2}{cm}.
 \end{hallazgo}
