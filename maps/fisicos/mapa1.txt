@@ -1,0 +1,15 @@
+# Mapa 1 físico: 4 filas x 3 columnas; celda de 24 cm.
+# Grilla: 74 x 98 cm; con margen blanco de 5 cm por lado: 84 x 108 cm.
+# Inicio (0,0) mirando al Este; meta (3,2).
+# 1 = pared, 0 = espacio libre.
+inicio 0 0 E
+meta 3 2
+1111111
+1000101
+1010101
+1000001
+1011101
+1000001
+1110101
+1000101
+1111111
