@@ -11,7 +11,9 @@ Solo usa la librería estándar: la demo no depende de internet ni de pip.
 """
 
 import argparse
+import errno
 import json
+import os
 import queue
 import socket
 import sys
@@ -24,13 +26,38 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 from pc import mapa as mapas
-from pc.enviar import PUERTO_TCP, conectar_tcp
+from pc.enviar import PUERTO_TCP, _ips_locales, conectar_tcp
 from pc.modelo import COSTO_GIRO
 from pc.planners import REGISTRO, ejecutar
 
 RAIZ = Path(__file__).resolve().parent.parent
 CARPETA_MAPAS = RAIZ / "maps"
 PAGINA = Path(__file__).resolve().parent / "demo" / "index.html"
+PUERTO_DEFECTO = 8000
+MAX_INTENTOS_PUERTO = 100
+
+
+class _ServidorHTTP(ThreadingHTTPServer):
+    # En Windows SO_REUSEADDR permite enlazar dos servidores al mismo puerto; en POSIX evita fallos por TIME_WAIT.
+    allow_reuse_address = os.name != "nt"
+    daemon_threads = True
+
+
+def _es_puerto_ocupado(err):
+    return err.errno in (errno.EADDRINUSE, 10048) or getattr(err, "winerror", None) == 10048
+
+
+def crear_servidor(host, puerto, handler_cls):
+    """Crea el servidor HTTP. Si puerto es None, prueba desde PUERTO_DEFECTO hasta hallar uno libre."""
+    if puerto is not None:
+        return _ServidorHTTP((host, puerto), handler_cls)
+    for candidato in range(PUERTO_DEFECTO, PUERTO_DEFECTO + MAX_INTENTOS_PUERTO):
+        try:
+            return _ServidorHTTP((host, candidato), handler_cls)
+        except OSError as e:
+            if not _es_puerto_ocupado(e):
+                raise
+    return _ServidorHTTP((host, 0), handler_cls)
 
 
 class Carro:
@@ -200,28 +227,60 @@ def manejador(carro):
     return Manejador
 
 
+def _hay_entorno_grafico():
+    return sys.platform in ("win32", "darwin") or bool(
+        os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY") or os.environ.get("BROWSER")
+    )
+
+
+def _urls_red(host, puerto):
+    if host not in ("0.0.0.0", "::", ""):
+        return [f"http://{host}:{puerto}"]
+    ips = sorted(_ips_locales())
+    destinos = [f"http://{ip}:{puerto}" for ip in ips]
+    destinos.append(f"http://{socket.gethostname()}:{puerto}")
+    return destinos
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(description="Interfaz web de la demo del carro.")
     p.add_argument("--ip", help="dirección del carro (por defecto la busca como pc.enviar)")
-    p.add_argument("--puerto", type=int, default=8000, help="puerto de la página (por defecto 8000)")
+    p.add_argument("--host", default="0.0.0.0", help="interfaz de escucha (por defecto 0.0.0.0)")
+    p.add_argument("--puerto", type=int, default=None,
+                   help=f"puerto de la página (por defecto {PUERTO_DEFECTO}, o el siguiente libre)")
     p.add_argument("--puerto-carro", type=int, default=PUERTO_TCP, help=argparse.SUPPRESS)   # para un carro simulado
     p.add_argument("--sin-carro", action="store_true", help="no conectarse al carro")
     p.add_argument("--no-abrir", action="store_true", help="no abrir el navegador")
     args = p.parse_args(argv)
 
     carro = Carro(args.ip, args.puerto_carro)
+    try:
+        servidor = crear_servidor(args.host, args.puerto, manejador(carro))
+    except OSError as e:
+        if _es_puerto_ocupado(e):
+            print(f"Error: el puerto {args.puerto} ya está en uso (ejecuta sin --puerto o usa --puerto 0).",
+                  file=sys.stderr)
+            return 1
+        raise
+
     if not args.sin_carro:
         threading.Thread(target=carro.correr, daemon=True).start()
-    servidor = ThreadingHTTPServer(("0.0.0.0", args.puerto), manejador(carro))
-    servidor.daemon_threads = True
-    url = f"http://localhost:{args.puerto}"
-    print(f"Interfaz en {url} (desde otro equipo de la red: http://{socket.gethostname()}:{args.puerto})")
-    if not args.no_abrir:
+
+    puerto = servidor.server_port
+    if args.puerto is None and puerto != PUERTO_DEFECTO:
+        print(f"Puerto {PUERTO_DEFECTO} ocupado; usando el puerto {puerto}.")
+    host_local = "localhost" if args.host in ("0.0.0.0", "::", "") else args.host
+    url = f"http://{host_local}:{puerto}"
+    destinos = ", ".join(_urls_red(args.host, puerto))
+    print(f"Interfaz en {url} (desde otro equipo de la red: {destinos})", flush=True)
+    if not args.no_abrir and _hay_entorno_grafico():
         webbrowser.open(url)
     try:
         servidor.serve_forever()
     except KeyboardInterrupt:
         pass
+    finally:
+        servidor.server_close()
     return 0
 
 
