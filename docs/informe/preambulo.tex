@@ -1,0 +1,235 @@
+% ============================================================================
+% Preámbulo común del Informe Técnico: Agente Solucionador de Laberintos 2D
+% ============================================================================
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{microtype}
+\usepackage[spanish,es-tabla,es-nodecimaldot,es-noshorthands]{babel}
+
+% Geometría y encabezados
+\usepackage[letterpaper,top=2.4cm,bottom=2.4cm,left=2.4cm,right=2.4cm,headheight=15pt]{geometry}
+\usepackage{fancyhdr}
+\usepackage{titlesec}
+\usepackage{parskip}
+
+% Matemáticas y teoremas
+\usepackage{amsmath,amssymb,amsthm}
+\theoremstyle{definition}
+\newtheorem{definicion}{Definición}[section]
+\theoremstyle{plain}
+\newtheorem{proposicion}{Proposición}[section]
+\newtheorem{teorema}{Teorema}[section]
+
+% Unidades SI
+\usepackage{siunitx}
+\sisetup{
+  output-decimal-marker = {.},
+  per-mode = symbol,
+  detect-all = true,
+  range-phrase = {\text{--}},
+  range-units = single
+}
+
+% Colores institucionales y técnicos
+\usepackage[table,dvipsnames]{xcolor}
+\definecolor{unalverde}{HTML}{1B5E20}
+\definecolor{azuldoc}{HTML}{154360}
+\definecolor{azulclaro}{HTML}{2E86C1}
+\definecolor{grisborde}{HTML}{BDC3C7}
+\definecolor{gristexto}{HTML}{4D5656}
+\definecolor{ambarborde}{HTML}{B7791F}
+\definecolor{ambarfondo}{HTML}{FEF9E7}
+\definecolor{azulfondo}{HTML}{EBF5FB}
+\definecolor{verdefondo}{HTML}{EAFAF1}
+\definecolor{rojoborde}{HTML}{A93226}
+\definecolor{rojofondo}{HTML}{FDEDEC}
+\definecolor{codigofondo}{HTML}{F8F9F9}
+
+% Figuras, tablas y listas
+\usepackage{graphicx}
+\usepackage{float}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{longtable}
+\usepackage{multirow}
+\usepackage{array}
+\usepackage{enumitem}
+
+\captionsetup{
+  font=small,
+  labelfont={bf,color=azuldoc},
+  labelsep=period,
+  skip=6pt
+}
+
+% Gráficos vectoriales: TikZ, CircuiTikZ y PGFPlots
+\usepackage{tikz}
+\usetikzlibrary{
+  babel,
+  arrows.meta,
+  positioning,
+  shapes.geometric,
+  shapes.multipart,
+  fit,
+  calc,
+  automata,
+  patterns,
+  decorations.pathreplacing
+}
+\usepackage[american]{circuitikz}
+\usepackage{pgfplots}
+\pgfplotsset{compat=1.18}
+
+% Pseudocódigos
+\usepackage[ruled,vlined,linesnumbered,spanish]{algorithm2e}
+\SetKwInput{KwDatos}{Entrada}
+\SetKwInput{KwResultado}{Salida}
+\SetAlCapSkip{0.6em}
+
+% Código fuente (Python / C++ / protocolo)
+\usepackage{listings}
+\lstset{
+  basicstyle=\ttfamily\footnotesize,
+  backgroundcolor=\color{codigofondo},
+  frame=single,
+  rulecolor=\color{grisborde},
+  breaklines=true,
+  breakatwhitespace=true,
+  tabsize=2,
+  numbers=left,
+  numberstyle=\tiny\color{gristexto},
+  keywordstyle=\bfseries\color{azuldoc},
+  commentstyle=\itshape\color{unalverde},
+  stringstyle=\color{rojoborde},
+  showstringspaces=false,
+  captionpos=b,
+  inputencoding=utf8,
+  extendedchars=true,
+  literate=
+    {á}{{\'a}}1 {é}{{\'e}}1 {í}{{\'i}}1 {ó}{{\'o}}1 {ú}{{\'u}}1
+    {Á}{{\'A}}1 {É}{{\'E}}1 {Í}{{\'I}}1 {Ó}{{\'O}}1 {Ú}{{\'U}}1
+    {ñ}{{\~n}}1 {Ñ}{{\~N}}1 {ü}{{\"u}}1 {Ü}{{\"U}}1
+    {°}{{\textdegree}}1 {±}{{$\pm$}}1 {×}{{$\times$}}1
+    {≤}{{$\le$}}1 {≥}{{$\ge$}}1 {→}{{$\rightarrow$}}1 {—}{{---}}1
+}
+
+% Cajas semánticas (tcolorbox)
+\usepackage[most]{tcolorbox}
+
+\newtcolorbox{porcompletar}[1][Contenido pendiente por completar]{
+  enhanced,
+  breakable,
+  colback=ambarfondo,
+  colframe=ambarborde,
+  coltitle=white,
+  fonttitle=\bfseries\small,
+  title={[POR COMPLETAR] #1},
+  left=8pt,right=8pt,top=6pt,bottom=6pt,
+  arc=3pt,
+  boxrule=0.9pt
+}
+
+\newtcolorbox{decision}[1]{
+  enhanced,
+  breakable,
+  colback=azulfondo,
+  colframe=azuldoc,
+  coltitle=white,
+  fonttitle=\bfseries\small,
+  title={Decisión de diseño: #1},
+  left=8pt,right=8pt,top=6pt,bottom=6pt,
+  arc=3pt,
+  boxrule=0.8pt
+}
+
+\newtcolorbox{hallazgo}[1][Hallazgo empírico]{
+  enhanced,
+  breakable,
+  colback=verdefondo,
+  colframe=unalverde,
+  coltitle=white,
+  fonttitle=\bfseries\small,
+  title={#1},
+  left=8pt,right=8pt,top=6pt,bottom=6pt,
+  arc=3pt,
+  boxrule=0.8pt
+}
+
+\newcommand{\placeholderfoto}[3][5.2cm]{%
+  \begin{tcolorbox}[
+    enhanced,
+    colback=codigofondo,
+    colframe=ambarborde,
+    borderline={0.8pt}{2pt}{ambarborde,dashed},
+    height=#1,
+    valign=center,
+    halign=center,
+    arc=3pt
+  ]
+    \textbf{\color{ambarborde}[FOTOGRAFÍA POR INSERTAR]}\\[4pt]
+    {\small\textbf{#2}}\\[3pt]
+    {\footnotesize\color{gristexto}#3}
+  \end{tcolorbox}
+}
+
+% Macros semánticas del proyecto
+\newcommand{\cmd}[1]{\texttt{#1}}
+\newcommand{\archivo}[1]{\texttt{#1}}
+\newcommand{\estado}[3]{\ensuremath{(#1,#2,#3)}}
+\newcommand{\badgeok}{\textcolor{unalverde}{\textbf{[Validado en pista / main]}}}
+\newcommand{\badgepr}{\textcolor{azulclaro}{\textbf{[Implementado en rama / en integración]}}}
+\newcommand{\badgepend}{\textcolor{ambarborde}{\textbf{[Planificado / pendiente]}}}
+
+% Formato de títulos de sección
+\titleformat{\section}
+  {\Large\bfseries\color{azuldoc}}
+  {\thesection.}{0.6em}{}
+  [\vspace{-0.3em}\color{grisborde}\titlerule]
+
+\titleformat{\subsection}
+  {\large\bfseries\color{azuldoc}}
+  {\thesubsection}{0.5em}{}
+
+\titleformat{\subsubsection}
+  {\normalsize\bfseries\color{gristexto}}
+  {\thesubsubsection}{0.5em}{}
+
+% Encabezado y pie de página
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\footnotesize\color{gristexto}Agente solucionador de laberintos 2D $\cdot$ Inteligencia Artificial}
+\fancyhead[R]{\footnotesize\color{gristexto}Universidad Nacional de Colombia}
+\fancyfoot[C]{\footnotesize\color{gristexto}\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+\renewcommand{\footrulewidth}{0.2pt}
+
+% Bibliografía (biblatex + biber)
+\usepackage{csquotes}
+\usepackage[backend=biber,style=ieee,sorting=none,urldate=comp]{biblatex}
+\addbibresource{referencias.bib}
+
+% Hipervínculos y referencias cruzadas (siempre al final del preámbulo)
+\usepackage[
+  colorlinks=true,
+  linkcolor=azuldoc,
+  citecolor=unalverde,
+  urlcolor=azulclaro,
+  plainpages=false,
+  pdfpagelabels=true,
+  pdftitle={Agente Autónomo Solucionador de Laberintos 2D en ESP32-S3},
+  pdfauthor={Equipo Agente Laberinto - Universidad Nacional de Colombia}
+]{hyperref}
+\usepackage[spanish,nameinlink]{cleveref}
+\crefname{table}{Tabla}{Tablas}
+\Crefname{table}{Tabla}{Tablas}
+\crefname{figure}{Figura}{Figuras}
+\Crefname{figure}{Figura}{Figuras}
+\crefname{algocf}{Algoritmo}{Algoritmos}
+\Crefname{algocf}{Algoritmo}{Algoritmos}
+\crefname{proposicion}{Proposición}{Proposiciones}
+\Crefname{proposicion}{Proposición}{Proposiciones}
+\crefname{definicion}{Definición}{Definiciones}
+\Crefname{definicion}{Definición}{Definiciones}

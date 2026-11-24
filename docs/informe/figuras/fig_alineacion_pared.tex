@@ -1,0 +1,67 @@
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}[
+  >=Stealth,
+  scale=0.52,
+  every node/.style={font=\sffamily\scriptsize},
+  cota/.style={<->, thin, draw=azuldoc},
+  eje/.style={dashed, thin, draw=gristexto}
+]
+
+  % Macro para dibujar el carro con el eje de las ruedas en x = #1 y centro vertical en y = #2
+  % En escala 1 unidad = 1 cm: sensor frontal a +16 cm del eje, punta del chasis a +17 cm, cola a -5 cm.
+  \newcommand{\dibujarCarro}[2]{%
+    \begin{scope}[shift={(#1,#2)}]
+      % Chasis
+      \fill[azulfondo, draw=azuldoc, thick, rounded corners=2pt] (-4.5, -1.6) rectangle (16.8, 1.6);
+      % Ruedas (centradas en x = 0)
+      \fill[black!80, rounded corners=1pt] (-2.2, 1.6) rectangle (2.2, 2.2);
+      \fill[black!80, rounded corners=1pt] (-2.2, -2.2) rectangle (2.2, -1.6);
+      % Eje de ruedas
+      \draw[red!75!black, thick, dashed] (0, -2.4) -- (0, 2.4);
+      \fill[red!75!black] (0, 0) circle (0.28);
+      % Sensor frontal TCRT5000 a +16 cm del eje
+      \fill[unalverde] (15.7, -0.35) rectangle (16.3, 0.35);
+      \draw[unalverde, thick] (16.0, 0.35) -- (16.0, 2.1);
+    \end{scope}%
+  }
+
+  % Coordenadas de la celda (x = 0: línea trasera; x = 12: centro de celda; x = 24: línea de pared frontal)
+  \foreach \y/\titulo in {18.0/{Fase 1: Aproximación controlada (\texttt{pwm\_aprox}) en última celda},
+                          9.0/{Fase 2: Cruce de línea frontal ($\text{cen}>\text{umbral}$ $\rightarrow$ \texttt{ALINEAR})},
+                          0.0/{Fase 3: Avance fino (\texttt{t\_alinear}) y contramarcha (\texttt{t\_freno})}} {
+    % Título de fase
+    \node[anchor=west, font=\bfseries\sffamily\footnotesize, text=azuldoc] at (-6.0, \y+4.2) {\titulo};
+    % Piso blanco de la celda
+    \fill[codigofondo] (-6.0, \y-2.6) rectangle (36.5, \y+2.6);
+    % Línea trasera (x = 0, ancho 2 cm) y línea frontal (x = 24, ancho 2 cm)
+    \fill[black!85] (-1.0, \y-2.6) rectangle (1.0, \y+2.6);
+    \fill[black!85] (23.0, \y-2.6) rectangle (25.0, \y+2.6);
+    % Centro de la celda (x = 12)
+    \draw[eje] (12.0, \y-2.7) -- (12.0, \y+2.7);
+    \node[anchor=south, text=gristexto] at (12.0, \y+2.65) {Centro (\SI{12}{cm})};
+    \node[anchor=south, text=black] at (24.0, \y+2.65) {Pared (\SI{24}{cm})};
+  }
+
+  % --- FASE 1: Carro entrando a la última celda (eje en x = 2.5 cm, sensor en 18.5 cm) ---
+  \dibujarCarro{2.5}{18.0}
+  \node[above, text=red!75!black] at (2.5, 20.5) {Eje};
+  \node[above, text=unalverde] at (18.5, 20.2) {Sensor ($+\SI{16}{cm}$)};
+  \draw[->, very thick, azulclaro] (2.5, 18.0) -- (6.5, 18.0) node[midway, above=2pt, fill=white, inner sep=1pt] {\texttt{pwm\_aprox}};
+  \node[anchor=west, align=left, text=gristexto] at (26.2, 18.0) {$t \ge (n-1)\,t_{\text{celda}}$:\\habilita sensor\\frontal};
+
+  % --- FASE 2: Sensor frontal pisa la línea en x = 24 cm -> eje en x = 8 cm (faltan 4 cm) ---
+  \dibujarCarro{8.0}{9.0}
+  \node[anchor=south west, text=unalverde] at (25.2, 10.6) {Detecta negro};
+  \draw[cota] (8.0, 5.8) -- (12.0, 5.8) node[midway, below] {$\approx\SI{4}{cm}$ faltantes};
+  \draw[cota] (8.0, 12.8) -- (24.0, 12.8) node[midway, above, fill=white, inner sep=1pt] {\SI{16}{cm} (eje--sensor)};
+  \node[anchor=west, align=left, text=gristexto] at (26.2, 8.6) {En celda de \SI{22}{cm}\\faltan $\approx\SI{6}{cm}$};
+
+  % --- FASE 3: Eje centrado en x = 12 cm, sensor en x = 28 cm (4 cm más allá de la línea) ---
+  \dibujarCarro{12.0}{0.0}
+  \node[above, fill=white, inner sep=1pt, text=red!75!black] at (12.0, 3.6) {\textbf{Eje centrado}};
+  \draw[cota] (12.0, -3.1) -- (24.0, -3.1) node[midway, below] {Media celda (\SI{12}{cm})};
+  \draw[cota] (24.0, 2.8) -- (28.0, 2.8) node[anchor=south west, xshift=-0.8cm] {$\sim\SI{4}{cm}$ (punta $\sim\SI{5}{cm}$)};
+  \node[anchor=west, align=left, text=unalverde] at (29.6, 0.0) {\textbf{Error acumulado}\\\textbf{reseteado}};
+
+\end{tikzpicture}%
+}%

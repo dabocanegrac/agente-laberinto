@@ -1,0 +1,15 @@
+% ============================================================================
+% Sección 8: Conclusiones
+% ============================================================================
+\section{Conclusiones}
+\label{sec:conclusiones}
+
+Sacar un algoritmo de búsqueda de una terminal de Python y hacerlo rodar sobre un chasis barato de dos ruedas nos dejó varias lecciones prácticas que no se ven cuando uno solo corre simulaciones.
+
+Lo primero que cambió el diseño fue meter la orientación dentro del estado $\estado{f}{c}{o}$. En la pista física girar tarda bastante más que avanzar una celda, y modelar esa diferencia con $c_{\text{giro}}$ convierte la búsqueda en un problema de tiempo real en vez de conteo de cuadritos. Añadir la penalización de orientación a la distancia Manhattan en A* nos dio una heurística sencilla, admisible y consistente que recorta expansiones frente a BFS y UCS sin complicar el código embebido.
+
+Lo segundo fue descubrir que el planificador rara vez es el cuello de botella: el verdadero trabajo estuvo entre el plan y las ruedas. Sin encoders, avanzar por tiempo puro se desarma a los pocos metros. Lo que hizo que el carro completara 6 de 6 corridas en \archivo{prueba\_4x4} fueron dos apoyos físicos: el giroscopio MPU6050 a \SI{500}{\hertz} con referencias absolutas (y luego el lazo PI de velocidad en \archivo{firmware/volver}, que bajó el error de giro por debajo de \SI{2}{\degree}) y el sensor frontal reseteando el error acumulado cada vez que aparece una pared al final de una recta.
+
+También valió mucho la pena escribir \archivo{src/planner/} sin dependencias de \archivo{Arduino.h} para compilarlo dentro de \cmd{pytest}. Cada vez que tocamos BFS o A*, los tests avisan al instante si el C++ del carro se desvía aunque sea en un nodo expandido respecto a Python. Y del lado de la red, pasar los logs TCP a escritura no bloqueante y guardar mapa y parámetros en NVS nos quitó el miedo a que una caída del Wi-Fi o un reinicio arruinara una prueba en vivo.
+
+Por último, los imprevistos físicos nos recordaron que conviene probar temprano con los materiales reales: la tinta del plotter resultó invisible al IR de los TCRT5000, la batería de \SI{9}{\volt} se cayó en \emph{brownout} con el Wi-Fi a potencia estándar, el L298N se comió un tercio del voltaje de las pilas AA y el MPU6050 llegó a reiniciarse en silencio por picos de corriente. Poder recalibrar umbrales y tiempos en sitio con \cmd{SET} y \cmd{SAVE}, sin recompilar, fue lo que nos permitió adaptarnos rápido a cada salón. Queda todavía por delante terminar las pruebas en exteriores y cerrar la comparación cronometrada de algoritmos en \archivo{mapa1} y \archivo{mapa2}, pero la arquitectura base del carro ya demostró en pista que puede planear y llegar a la meta por su cuenta.

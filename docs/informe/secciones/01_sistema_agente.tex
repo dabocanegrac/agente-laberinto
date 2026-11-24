@@ -1,0 +1,123 @@
+\section{Descripción del sistema y definición del agente (IA)}
+\label{sec:sistema-agente}
+
+\subsection{Propósito del sistema y visión general}
+\label{subsec:proposito-vision}
+
+El proyecto \texttt{agente-laberinto}~\cite{repo2026agentelaberinto} consiste en un carro autónomo que recorre laberintos 2D trazados sobre una superficie plana. El robot recibe de antemano el mapa con las paredes, su posición y orientación inicial \estado{f_0}{c_0}{o_0} y la celda meta $(f_g, c_g)$. Con esa información calcula una secuencia de movimientos relativos (\cmd{F} para avanzar una celda; \cmd{L} y \cmd{R} para girar \SI{90}{\degree} a izquierda o derecha) y la ejecuta en un chasis diferencial 2WD que no tiene \textit{encoders} en las ruedas.
+
+Todo el ciclo del agente (percibir, planear y actuar) corre dentro del ESP32-S3~\cite{arquitectura2026doc}. El computador no maneja el carro mientras se mueve; se usa únicamente para probar algoritmos en Python, generar o imprimir mapas, calibrar parámetros y enviar el archivo de pista al inicio. A lo largo de este informe cubrimos el estado completo del repositorio y distinguimos con claridad qué ya está probado en pista sobre \texttt{main}, qué está escrito en ramas activas pendientes de mezcla y qué sigue en planeación.
+
+\begin{decision}{DEC-05: Planificación y ejecución autónoma a bordo}
+Teníamos dos caminos: calcular la ruta en el PC y mandar cada movimiento paso a paso por Wi-Fi, o hacer que el carro reciba el mapa una sola vez y planee por su cuenta. Elegimos la segunda opción. Si el agente depende del computador en tiempo real, cualquier corte de red lo deja tirado en mitad del laberinto; con la planificación a bordo, en cambio, el PC solo observa y verifica que el carro calcule la misma ruta que Python. El 27/10/2026 comprobamos esto en pista apagando el Wi-Fi del portátil justo después de mandar \cmd{GO}, y el carro terminó el recorrido hasta la meta sin detenerse~\cite{arquitectura2026doc}.
+\end{decision}
+
+\begin{decision}{DEC-06: Selección del microcontrolador ESP32-S3 N16R8}
+Descartamos placas de 8 bits como Arduino Uno o Mega porque necesitábamos radio Wi-Fi, buena memoria RAM y varios canales analógicos sin conflictos. El ESP32-S3 N16R8 (\SI{16}{MB} de Flash, \SI{8}{MB} de PSRAM OPI y doble núcleo Xtensa LX7 hasta \SI{240}{MHz})~\cite{espressif2024esp32s3} nos resolvió cuatro necesidades a la vez: consola TCP y actualizaciones OTA sin cables, espacio de sobra para los arreglos estáticos de búsqueda (hasta $\sim\SI{60}{KB}$ en $A^*$), pines ADC1 que siguen funcionando con el Wi-Fi encendido y FreeRTOS para correr la lectura del giroscopio en una tarea propia a \SI{500}{Hz}~\cite{arquitectura2026doc}.
+\end{decision}
+
+\subsection{Definición formal del agente mediante el marco PEAS}
+\label{subsec:peas}
+
+Para fijar exactamente qué percibe y qué controla el robot, la \cref{tab:peas} describe el agente bajo el marco PEAS de Russell y Norvig~\cite{russell2021aima}, incluyendo la base de \texttt{main} y las mejoras de las ramas en integración.
+
+\begin{table}[H]
+\centering
+\caption{Especificación formal del agente según el marco PEAS.}
+\label{tab:peas}
+\small
+\begin{tabularx}{\textwidth}{@{}p{2.7cm}X@{}}
+\toprule
+\textbf{Componente} & \textbf{Descripción técnica y estado de integración} \\
+\midrule
+\textbf{Rendimiento (Performance)} &
+\begin{itemize}[leftmargin=1.2em,nosep]
+  \item Llegar a la celda meta $(f_g, c_g)$ desde \estado{f_0}{c_0}{o_0} sin salirse de los pasillos ni pisar paredes \badgeok.
+  \item Minimizar el número de acciones ($|\pi|$) con BFS \badgeok, o el costo temporal $J(\pi) = \sum c(a_i)$ con UCS y $A^*$ en PC y $A^*$ a bordo (\texttt{firmware/astar} \badgepr).
+  \item Mantener precisión angular en giros ($\pm\SI{4}{\degree}$ en \texttt{main} \badgeok; $+0.6^\circ \pm 1.9^\circ$ / $-1.5^\circ \pm 0.5^\circ$ con PI en \texttt{firmware/volver} \badgepr) y tiempo total bajo ($\sim\SI{14}{s}$ en \archivo{prueba\_4x4.txt} \badgeok).
+  \item Parar de forma segura si el recorrido excede el límite de \SI{90}{s} \badgeok.
+\end{itemize} \\
+\midrule
+\textbf{Entorno (Environment)} &
+\begin{itemize}[leftmargin=1.2em,nosep]
+  \item Laberinto 2D sobre fondo blanco con líneas negras mate de \SI{2}{cm} y celdas de \SI{24}{cm} entre centros (\SI{22}{cm} libres según \texttt{DEC-02}; \SI{22}{cm} de paso en la prueba inicial de \archivo{prueba\_4x4.txt}) \badgeok.
+  \item Perturbaciones físicas reales: pendiente del piso, roce de la llanta con la cinta aislante, luz solar en exteriores y caída de voltaje de las pilas \badgeok.
+\end{itemize} \\
+\midrule
+\textbf{Actuadores (Actuators)} &
+\begin{itemize}[leftmargin=1.2em,nosep]
+  \item Dos motorreductores N20 (\SI{6}{V}, \SI{500}{RPM}, llantas de \SI{43}{mm}) movidos por un puente H L298N con PWM en GPIO 7/15/16 (derecho) y 8/17/18 (izquierdo), con freno por contramarcha (\cmd{pwm\_freno}) \badgeok.
+  \item LED RGB WS2812 en GPIO 48 para ver el estado sin consola (azul: sin mapa; verde: ruta lista; blanco: andando; rojo: reinicio por \textit{brownout}) \badgeok.
+  \item Salida de telemetría por TCP/Serial y visor web SSE en \archivo{pc/demo.py} (rama \texttt{pc/interfaz} \badgepr).
+\end{itemize} \\
+\midrule
+\textbf{Sensores (Sensors)} &
+\begin{itemize}[leftmargin=1.2em,nosep]
+  \item 3 sensores reflectivos IR TCRT5000 en ADC1 (GPIO 4 izquierdo, 5 frontal, 6 derecho), normalizados de $0$ a $1000$ \badgeok.
+  \item Giroscopio MPU6050 por I2C a \SI{400}{kHz} (GPIO 9 SDA, 10 SCL), integrado a \SI{500}{Hz} en el eje $Z$ ($\pm\SI{500}{\degree/s}$) \badgeok.
+  \item Divisor de tensión ($\SI{6.6}{k\Omega}/\SI{2.2}{k\Omega}$ + \SI{10}{nF}) en GPIO 1 (ADC1) para medir la batería y compensar el PWM (\texttt{firmware/volver} \badgepr).
+\end{itemize} \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsection{Clasificación del entorno de tareas}
+\label{subsec:clasificacion-entorno}
+
+En robótica móvil pasa algo incómodo al clasificar el entorno~\cite{siegwart2011autonomous}: el mismo laberinto parece limpio y predecible cuando lo mira el algoritmo de búsqueda, pero se vuelve ruidoso en cuanto el carro toca el suelo. Por eso la \cref{tab:entorno-rn} separa las propiedades del nivel deliberativo (el grafo que usa el planificador) de las del nivel físico (la pista real), usando las dimensiones de Russell y Norvig~\cite{russell2021aima}.
+
+\begin{table}[H]
+\centering
+\caption{Clasificación del entorno de tareas en los niveles deliberativo y físico~\cite{russell2021aima}.}
+\label{tab:entorno-rn}
+\small
+\begin{tabularx}{\textwidth}{@{}p{2.9cm}p{4.8cm}X@{}}
+\toprule
+\textbf{Dimensión} & \textbf{Nivel deliberativo (modelo)} & \textbf{Nivel físico (mundo real)} \\
+\midrule
+\textbf{Observabilidad} &
+\textbf{Totalmente observable.} El mapa $(2n+1)\times(2m+1)$ se conoce entero antes de planear. &
+\textbf{Parcialmente observable.} Sin \textit{encoders}, el carro no conoce su posición continua $(x,y)$; solo mide rumbo relativo (MPU6050) y cruce de líneas (TCRT5000). \\
+\midrule
+\textbf{Determinismo} &
+\textbf{Determinista.} Aplicar \cmd{F}, \cmd{L} o \cmd{R} sobre \estado{f}{c}{o} siempre lleva a un único estado siguiente. &
+\textbf{Estocástico.} El avance y los giros cambian con la pendiente, el roce con la cinta y la carga de las baterías. \\
+\midrule
+\textbf{Episódico vs.\ secuencial} &
+\textbf{Secuencial.} La ruta y su costo dependen de toda la cadena de acciones desde el inicio. &
+\textbf{Secuencial.} Un desvío que no se corrige en un tramo se arrastra al siguiente y puede sacar el carro de la celda. \\
+\midrule
+\textbf{Estático vs.\ dinámico} &
+\textbf{Estático.} Ni las paredes ni la meta cambian mientras se busca la ruta. &
+\textbf{Cuasiestático / dinámico.} Las paredes son fijas, pero el voltaje cae en cada arranque y la luz solar puede variar durante una prueba. \\
+\midrule
+\textbf{Discreto vs.\ continuo} &
+\textbf{Discreto.} A lo sumo $16 \times 16 \times 4 = 1024$ estados y 3 acciones posibles. &
+\textbf{Continuo.} Pose $(x,y,\theta) \in \mathbb{R}^2 \times [0, 2\pi)$, tiempos en milisegundos y señales analógicas ADC/I2C. \\
+\midrule
+\textbf{Agentes} &
+\textbf{Monoagente.} Solo un agente busca sobre el grafo. &
+\textbf{Monoagente.} No hay otros carros ni obstáculos móviles en pista. \\
+\midrule
+\textbf{Conocimiento} &
+\textbf{Conocido.} Las reglas de transición y los costos $(c_F, c_{\text{giro}})$ están fijos en el código. &
+\textbf{Parcialmente conocido / calibrable.} La respuesta mecánica cambia según el piso y obliga a recalibrar en sitio (\cmd{SET}/\cmd{SAVE}). \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsection{Tipo de agente y arquitectura híbrida de capas}
+\label{subsec:tipo-arquitectura}
+
+Según la clasificación de Russell y Norvig~\cite{russell2021aima}, el robot funciona como agente basado en objetivos cuando planea con BFS (ya en \texttt{main}), porque solo busca llegar a la celda meta $(f_g, c_g)$ en cualquier orientación con la menor cantidad de acciones. Cuando usa UCS o $A^*$ (ambos en ramas activas en PC, y $A^*$ también a bordo en \texttt{firmware/astar}), pasa a comportarse como agente basado en utilidad: minimiza una función de costo que pesa cada avance ($c_F = 1.0$) frente a cada giro ($c_{\text{giro}}$), de modo que prefiere tramos rectos más largos si le ahorran giros lentos en pista.
+
+Para juntar la búsqueda simbólica con un control rápido de motores y sensores, dividimos el firmware en cinco capas apiladas que siguen una arquitectura híbrida deliberativa--reactiva (\cref{fig:arquitectura-capas}). La organización obedece tres reglas sencillas que mantenemos en el código y en los tests~\cite{arquitectura2026doc}: cada capa solo llama a la inmediatamente inferior (\textit{Comandos $\rightarrow$ Planificador $\rightarrow$ Ejecutor $\rightarrow$ Movimiento $\rightarrow$ HAL}); el planificador no sabe nada de pines ni motores y el ejecutor no sabe qué algoritmo produjo la lista \cmd{F/L/R}; y los archivos de \archivo{src/planner/} no incluyen \archivo{Arduino.h}. Esta última decisión nos dio mucho aire durante el desarrollo, porque nos permitió compilar el C++ del carro en el PC con \cmd{ziglang} o \cmd{g++} dentro de \archivo{pc/tests/test\_planner\_cpp.py} y comprobar automáticamente que entrega la misma ruta, costo y nodos expandidos que Python.
+
+\begin{figure}[H]
+\centering
+\input{figuras/fig_arquitectura_capas}
+\caption{Arquitectura híbrida de cinco capas en el ESP32-S3, ecosistema de soporte en PC y ciclo interno percibir--planear--actuar.}
+\label{fig:arquitectura-capas}
+\end{figure}
+
+Del lado del PC viven las utilidades de soporte: \archivo{pc/planear.py}, \archivo{pc/imprimir.py}, \archivo{pc/enviar.py} y \archivo{pc/consola.py} ya están en \texttt{main}, mientras que \archivo{pc/generar.py} (\texttt{mapas/SW-05}), \archivo{pc/comparar.py} (\texttt{algo/astar}) y la interfaz web con \textit{Server-Sent Events} \archivo{pc/demo.py} (\texttt{pc/interfaz}) están listos en sus ramas a la espera de integración.

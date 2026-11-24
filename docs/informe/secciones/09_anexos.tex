@@ -1,0 +1,144 @@
+% ============================================================================
+% Anexos técnicos
+% ============================================================================
+\section{Anexos técnicos}
+\label{sec:anexos}
+
+\subsection{Anexo A: Registro de decisiones de ingeniería}
+\label{subsec:anexo-decisiones}
+
+La \cref{tab:anexo-decisiones} reúne las seis decisiones formales de la hoja \emph{Decisiones} de \archivo{Organizacion\_\allowbreak Agente\_\allowbreak Laberinto.xlsx}~\cite{excel2026organizacion}, más las tres evoluciones técnicas que surgieron después durante las pruebas en pista (\archivo{docs/\allowbreak ARQUITECTURA.md} y ramas activas).
+
+\begin{table}[htbp]
+  \centering
+  \caption{Registro de decisiones de diseño del proyecto (\texttt{DEC-01} a \texttt{DEC-06} y evoluciones posteriores).}
+  \label{tab:anexo-decisiones}
+  \footnotesize
+  \begin{tabularx}{\textwidth}{@{}p{1.35cm}p{2.6cm}p{4.0cm}X@{}}
+    \toprule
+    \textbf{ID} & \textbf{Tema} & \textbf{Opciones evaluadas} & \textbf{Decisión adoptada y motivo} \\
+    \midrule
+    \cmd{DEC-01} & Formato del mapa &
+      (a) Grilla $(2n+1)\times(2m+1)$ de 0/1; (b) máscara de bits directa en archivo. &
+      \textbf{(a) Grilla de 0/1:} legible y editable a mano; al cargarla se compila a máscara de 4 bits (\cmd{N=1, E=2, S=4, O=8}) en Python y C++. \\
+    \cmd{DEC-02} & Celda y grosor de línea &
+      Celda 20--\SI{25}{\centi\meter}, línea 1.5--\SI{2}{\centi\meter}. &
+      \textbf{Celda \SI{24}{\centi\meter}, línea \SI{2}{\centi\meter}, margen \SI{5}{\centi\meter}:} deja \SI{22}{\centi\meter} blancos y \SI{3}{\centi\meter} de tolerancia por lado para los sensores TCRT5000. \\
+    \cmd{DEC-03} & Material del laberinto &
+      (a) Plotter bond; (b) cartulina + cinta aislante; (c) cartulina negra mate; (d) lona mate. &
+      \textbf{(b) Cinta aislante negra mate:} la tinta del plotter salió invisible al IR (26/10); la cinta dio buen contraste (400--690 vs.\ 24--85). \\
+    \cmd{DEC-04} & Fecha de sustentación &
+      28/10/2026 vs.\ 04/11/2026. &
+      Corrimiento al \textbf{miércoles 04/11/2026} (demo en exterior) para terminar integración y pruebas en pista. \\
+    \cmd{DEC-05} & Dónde se planea la ruta &
+      (a) En el PC y enviar ruta; (b) a bordo del carro recibiendo el mapa. &
+      \textbf{(b) A bordo del carro:} el agente trabaja solo sin depender del Wi-Fi; Python queda de referencia, simulador y comparador. \\
+    \cmd{DEC-06} & Microcontrolador &
+      Placa ESP32-S3 N16R8 + shield de expansión. &
+      \textbf{ESP32-S3 N16R8:} Wi-Fi AP+STA, OTA en 16\,MB Flash, 8\,MB OPI PSRAM, ADC1 libre con Wi-Fi y FreeRTOS doble núcleo. \\
+    \midrule
+    Evol.\ 1 & Control angular (\textcolor{unalverde}{\textbf{ok}}) &
+      Giros por tiempo vs.\ giroscopio MPU6050. &
+      \textbf{MPU6050 a \SI{500}{\hertz}:} bajó el error angular de $\pm 15\text{--}\SI{25}{\degree}$ a $\pm\SI{4}{\degree}$ (y $< \SI{2}{\degree}$ con PI en \archivo{firmware/volver}). \\
+    Evol.\ 2 & Energía motores (\textcolor{azulclaro}{\textbf{PR}}) &
+      4$\times$AA (\SI{6}{\volt}) vs.\ 6$\times$AA vs.\ pack 2S~18650. &
+      \textbf{Pack 2S~18650 + compensación PWM} (\archivo{firmware/volver}): recupera el par en giros y evita que \cmd{t\_celda} derive con la descarga. \\
+    Evol.\ 3 & Planificador a bordo (\textcolor{azulclaro}{\textbf{PR}}) &
+      Solo BFS vs.\ BFS + A* seleccionable. &
+      \textbf{BFS y A* en C++} (\archivo{firmware/astar}): comando \cmd{ALGO}, paridad exacta contra Python en 60 mapas aleatorios. \\
+    \bottomrule
+  \end{tabularx}
+\end{table}
+
+\subsection{Anexo B: Protocolo de comandos (Serial y TCP puerto 23)}
+\label{subsec:anexo-protocolo}
+
+El firmware acepta exactamente los mismos comandos de texto (una línea por orden) por USB-Serial a \SI{115200}{baudios} y por TCP en el puerto 23, tanto en la red propia \cmd{192.168.4.1} como en la IP del \emph{hotspot}. Las respuestas empiezan con \cmd{OK}, \cmd{ERR} o \cmd{RUTA}; las líneas de log empiezan con \cmd{\#}. La \cref{tab:anexo-comandos} lista todo el protocolo.
+
+\begin{table}[htbp]
+  \centering
+  \caption{Catálogo completo de comandos del firmware \archivo{arduino/agente}.}
+  \label{tab:anexo-comandos}
+  \footnotesize
+  \begin{tabularx}{\textwidth}{@{}p{3.9cm}Xp{2.3cm}@{}}
+    \toprule
+    \textbf{Comando} & \textbf{Descripción y comportamiento} & \textbf{Estado} \\
+    \midrule
+    \cmd{MAPA} \dots{} \cmd{FIN} & Recibe el mapa línea por línea, lo valida, lo guarda en NVS y calcula la ruta. & \textcolor{unalverde}{\textbf{Validado}} \\
+    \cmd{PLAN} / \cmd{RUTA} & Recalcula la ruta sobre el mapa guardado / imprime la última ruta calculada. & \textcolor{unalverde}{\textbf{Validado}} \\
+    \cmd{COSTO\_GIRO <v>} & Fija el peso relativo de \cmd{L}/\cmd{R} en NVS y replanifica automáticamente. & \textcolor{unalverde}{\textbf{Validado}} \\
+    \cmd{GO} & Calibra el giroscopio (carro quieto) y ejecuta la ruta completa de forma autónoma. & \textcolor{unalverde}{\textbf{Validado}} \\
+    \cmd{PASO F [n]|L|R|A} & Ejecuta una primitiva aislada (\cmd{A}: avanzar hasta línea frontal y alinear). & \textcolor{unalverde}{\textbf{Validado}} \\
+    \cmd{SET <p> <v>} / \cmd{GET} / \cmd{SAVE} & Modifica en vivo, consulta o persiste en NVS los parámetros de \archivo{parametros.h}. & \textcolor{unalverde}{\textbf{Validado}} \\
+    \cmd{SENS [ON|OFF]} & Lee los 3 TCRT5000 (0--1000) o activa/desactiva el muestreo continuo cada \SI{200}{\milli\second}. & \textcolor{unalverde}{\textbf{Validado}} \\
+    \cmd{IMU [ON|OFF|CAL]} & Reporta rumbo/sesgo, streaming continuo o recalibra sesgo con verificación de quietud. & \textcolor{unalverde}{\textbf{Validado}} \\
+    \cmd{RED\_SSID} / \cmd{RED\_CLAVE} / \cmd{RED} & Configura credenciales de hotspot en NVS y gestiona conexión (\cmd{CONECTAR}/\cmd{BORRAR}). & \textcolor{unalverde}{\textbf{Validado}} \\
+    \cmd{INFO} / \cmd{STOP} & Reporta estado general (mapa, fase, IMU, causa de reset, IP) / parada de emergencia. & \textcolor{unalverde}{\textbf{Validado}} \\
+    \midrule
+    \cmd{ALGO [bfs|astar]} & Selecciona y persiste el algoritmo embarcado (\archivo{origin/firmware/astar}). & \textcolor{azulclaro}{\textbf{En rama / PR}} \\
+    \cmd{BAT} / \cmd{BAT CAL <V>} & Lee voltaje del pack 2S, factor de compensación PWM y calibra \cmd{bat\_k} (\archivo{firmware/volver}). & \textcolor{azulclaro}{\textbf{En rama / PR}} \\
+    \cmd{IMU DIAG} / \cmd{VOLVER} & Diagnóstico de reinicios I2C del MPU6050 / retorno automático al inicio (\archivo{firmware/volver}). & \textcolor{azulclaro}{\textbf{En rama / PR}} \\
+    \bottomrule
+  \end{tabularx}
+\end{table}
+
+\subsection{Anexo C: Parámetros calibrables (\archivo{parametros.h})}
+\label{subsec:anexo-parametros}
+
+Todos los campos de la \cref{tab:anexo-parametros} están en \archivo{arduino/agente/src/config/parametros.h} y se ajustan sin recompilar mediante \cmd{SET} y \cmd{SAVE}. Comparamos los valores calibrados el 26/10/2026 en \archivo{main} (4$\times$AA, celda de \SI{22}{\centi\meter}) con los de \archivo{origin/firmware/volver} (pack 2S~18650, control PI de giros).
+
+\begin{table}[htbp]
+  \centering
+  \caption{Parámetros calibrables del ejecutor en \archivo{parametros.h} (\archivo{main} vs.\ \archivo{firmware/volver}).}
+  \label{tab:anexo-parametros}
+  \footnotesize
+  \begin{tabularx}{\textwidth}{@{}lccX@{}}
+    \toprule
+    \textbf{Parámetro} & \textbf{\archivo{main}} & \textbf{\archivo{volver}} & \textbf{Significado y efecto en el control} \\
+    \midrule
+    \cmd{t\_celda} (\si{\milli\second}) & 536 & 424 & Tiempo para recorrer una celda a \cmd{pwm} (estimado $\approx 585$ para \SI{24}{\centi\meter} con 4$\times$AA). \\
+    \cmd{t\_giro} (\si{\milli\second}) & 400 & 400 & Duración de giro de \SI{90}{\degree} por tiempo (solo en respaldo sin IMU). \\
+    \cmd{pwm} / \cmd{pwm\_aprox} & 180 / 140 & 180 / 140 & PWM de crucero y PWM reducido en la última celda antes de pared frontal. \\
+    \cmd{pwm\_giro} / \cmd{pwm\_freno} & 230 / 150 & 165 / 105 & PWM de arranque/pulsos en giro y PWM de contramarcha al frenar. \\
+    \cmd{pwm\_min} & --- & 120 & Zona muerta mínima de una rueda al avanzar (evita que los N20 se detengan). \\
+    \cmd{comp} / \cmd{kp} / \cmd{kr} & 0 / 50 / 8 & 0 / 50 / 8 & Compensación fija, corrección lateral IR y ganancia de rumbo IMU. \\
+    \cmd{umbral} & 200 & 130 & Umbral normalizado (0--1000) por encima del cual un sensor IR marca negro. \\
+    \cmd{t\_alinear} / \cmd{t\_freno} / \cmd{pausa} & 0 / 40 / 120 & 0 / 40 / 120 & Avance tras línea frontal, duración de contramarcha y reposo entre movimientos (\si{\milli\second}). \\
+    \cmd{t\_buscar} / \cmd{perdido} & --- & 500 / 1 & Tiempo extra buscando pared (\si{\milli\second}) y parada con \cmd{ERR} si falta una pared esperada. \\
+    \cmd{giro\_antic\_r} / \cmd{giro\_antic\_l} & 6 / 6 & 2 / 2 & Grados de anticipación antes de \SI{90}{\degree} para absorber la inercia. \\
+    \cmd{giro\_tol} / \cmd{t\_pulso} & 4 / 60 & 3 / 40 & Tolerancia angular (\si{\degree}) para dar pulsos correctivos y duración de cada pulso (\si{\milli\second}). \\
+    \cmd{giro\_vel} / \cmd{giro\_vel\_min} / \cmd{giro\_lento} & --- & 120 / 50 / 60 & Rampa de velocidad angular del PI (\si{\degree\per\second} y ventana de frenado en \si{\degree}). \\
+    \cmd{kp\_giro} / \cmd{ki\_giro} & --- & 6 / 10 & Ganancias proporcional e integral del lazo de velocidad angular en giro. \\
+    \cmd{imu\_signo} & 1 & 1 & Polaridad del eje Z del MPU6050 ($+1$ chip arriba, $-1$ invertido). \\
+    \cmd{bat\_k} / \cmd{v\_ref} / \cmd{v\_caida} & --- & 4000 / 780 / 200 & Factor del divisor resistivo, tensión de referencia (\SI{7.80}{\volt}) y caída del driver (\SI{2.00}{\volt}). \\
+    \bottomrule
+  \end{tabularx}
+\end{table}
+
+\subsection{Anexo D: Reparto de paquetes de trabajo}
+\label{subsec:anexo-equipo}
+
+Para trabajar en paralelo sobre una rama \archivo{main} protegida (cada PR requiere una aprobación y entra con \emph{squash merge}), repartimos el proyecto en paquetes independientes~\cite{excel2026organizacion}. La \cref{tab:anexo-paquetes} resume quién tomó cada paquete y en qué estado está dentro del repositorio.
+
+\begin{table}[htbp]
+  \centering
+  \caption{Paquetes de trabajo del proyecto según \archivo{Organizacion\_Agente\_Laberinto.xlsx} y estado en el repositorio.}
+  \label{tab:anexo-paquetes}
+  \footnotesize
+  \begin{tabularx}{\textwidth}{@{}p{2.5cm}p{1.9cm}Xp{1.8cm}p{2.2cm}@{}}
+    \toprule
+    \textbf{ID} & \textbf{Área} & \textbf{Entregable principal} & \textbf{Resp.} & \textbf{Estado repo} \\
+    \midrule
+    \cmd{GEN-01}, \cmd{HW-01..03} & Hardware & Repositorio, compra, ensamble, pruebas Wi-Fi/OTA y control remoto & Daniel B. & \textcolor{unalverde}{\textbf{Validado}} \\
+    \cmd{SW-01}, \cmd{SW-03}, \cmd{LAB-00/02} & Firmware / PC & Grilla 0/1, BFS Python y C++, \archivo{enviar.py}, \archivo{imprimir.py}, \texttt{DEC-02} & Daniel B. & \textcolor{unalverde}{\textbf{Validado}} \\
+    \cmd{HW-05} & Firmware & Ejecutor autónomo, MPU6050, blindaje TCP y hotspot (PR~\#5) & Daniel B. & \textcolor{unalverde}{\textbf{Validado}} \\
+    \cmd{SW-05} & Software PC & Paquete~2: planificador \textbf{UCS} y generador \archivo{pc/generar.py} & Daniel Ch. & \textcolor{azulclaro}{\textbf{En rama / PR}} \\
+    \cmd{SW-06}, \cmd{SW-07} & PC / Firmware & Paquete~3: \textbf{A*} Python, \archivo{pc/comparar.py} y \textbf{A*} C++ a bordo & Angel P. & \textcolor{azulclaro}{\textbf{En rama / PR}} \\
+    \cmd{LAB-01/06}, \cmd{SW-02} & Laberinto / PC & Paquete~4: diseños \archivo{mapa1}/\archivo{mapa2} y planificador \textbf{Greedy} & Sara R. & \textcolor{azulclaro}{\textbf{En rama / PR}} \\
+    \cmd{SW-04} & Software PC & Paquete~1: planificador \textbf{DFS} y simulador animado \archivo{pc/simulador.py} & Vanessa R. & \textcolor{ambarborde}{\textbf{Pendiente}} \\
+    \cmd{HW-04}, \cmd{LAB-03/04} & Hardware / Pista & Bajar sensores + faldita, prueba solar y armado de laberinto final & Equipo & \textcolor{ambarborde}{\textbf{Pendiente}} \\
+    \cmd{INT-01..03} & Integración & Recorridos 3/3 en \archivo{mapa1}, ensayo exterior y cronometraje comparativo & Equipo & \textcolor{ambarborde}{\textbf{Pendiente}} \\
+    \cmd{REP-01..04} & Documentación & Informe técnico completo en LaTeX (\archivo{docs/informe/}) y PDF final & Daniel Ch. & \textcolor{azuldoc}{\textbf{En curso}} \\
+    \bottomrule
+  \end{tabularx}
+\end{table}

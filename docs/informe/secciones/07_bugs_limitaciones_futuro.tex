@@ -1,0 +1,96 @@
+% ============================================================================
+% Sección 7: Bugs conocidos, limitaciones y mejoras futuras
+% ============================================================================
+\section{Bugs conocidos, limitaciones y mejoras futuras}
+\label{sec:bugs-futuro}
+
+En Python todo corría limpio desde la primera semana. Los dolores de cabeza aparecieron al bajar el código al chasis real: tinta que los sensores no ven, pilas que se caen en medio de un giro, un giroscopio que se duerme sin avisar y sockets TCP que congelan los motores. En esta sección listamos los fallos que nos encontramos, las limitaciones que sabemos que tiene el diseño actual y lo que cambiaríamos después~\cite{arquitectura2026doc,handoff2026doc,excel2026organizacion}.
+
+\subsection{Bugs encontrados e incidentes en pruebas}
+\label{subsec:catalogo-bugs}
+
+La \cref{tab:bugs-limitaciones} agrupa cada problema detectado en laboratorio y pista, qué lo provocó, cómo afectó las corridas y qué hicimos (o qué falta hacer) para resolverlo.
+
+\begin{longtable}{@{}p{2.5cm}p{3.6cm}p{3.8cm}p{4.6cm}@{}}
+  \caption{Registro consolidado de bugs, fallos físicos detectados y planes de solución.}
+  \label{tab:bugs-limitaciones} \\
+  \toprule
+  \textbf{Subsistema / Problema} & \textbf{Causa raíz} & \textbf{Impacto observado} & \textbf{Solución aplicada o pendiente} \\
+  \midrule
+  \endfirsthead
+  \toprule
+  \textbf{Subsistema / Problema} & \textbf{Causa raíz} & \textbf{Impacto observado} & \textbf{Solución aplicada o pendiente} \\
+  \midrule
+  \endhead
+  \bottomrule
+  \endfoot
+
+  \textbf{Óptica / Laberinto:} tinta de plotter invisible al IR &
+  La tinta negra de inyección refleja en el infrarrojo ($\approx\SI{950}{\nano\meter}$) del TCRT5000~\cite{vishay2012tcrt5000}. &
+  El 26/10/2026 los sensores leyeron la línea impresa igual que el papel blanco (24--85) y el carro siguió de largo. &
+  \textbf{Resuelto:} el impreso queda de plantilla y todas las líneas se forran con cinta aislante negra mate ($\approx\SI{1.9}{\centi\meter}$, lecturas 400--690). \\
+  \midrule
+
+  \textbf{Óptica / Exterior:} saturación solar de sensores IR &
+  Sensores a $\approx\SI{1.5}{\centi\meter}$ del suelo sin pantalla contra luz ambiente; el sol sube el piso de ruido IR. &
+  El contraste entre blanco y cinta se achica en exteriores (riesgo directo en la demo al aire libre). &
+  \textbf{Pendiente (\cmd{HW-04}, \cmd{LAB-03}):} bajar los TCRT5000 a 5--\SI{8}{\milli\meter}, añadir faldita opaca de cartón y recalibrar \cmd{umbral} en sitio. \\
+  \midrule
+
+  \textbf{Potencia / Motores:} falta de torque y pitido en giros &
+  Motores N20-10 de 500~RPM (bajo par) alimentados con 4$\times$AA (\SI{6}{\volt}) tras una caída de $\approx\SI{2}{\volt}$ en el L298N~\cite{st2000l298n}. &
+  Debajo de \cmd{pwm\_giro = 170} las ruedas no arrancan y pitan; el freno en corto del L298N casi no frena. &
+  \textbf{Mitigado:} freno por contramarcha (\cmd{pwm\_freno}), zona muerta \cmd{pwm\_min} y paso a 2S~18650 con compensación PWM (\archivo{firmware/volver}). Después: DRV8833/TB6612 + N20 de 100--200~RPM. \\
+  \midrule
+
+  \textbf{Energía lógica:} bucle de \emph{brownout} en \SI{9}{\volt} &
+  Alta resistencia interna de la batería alcalina de \SI{9}{\volt} frente a los picos de transmisión Wi-Fi del ESP32-S3. &
+  El 23/10/2026 con \SI{7.67}{\volt} en reposo entró en reinicio continuo (\cmd{ESP\_RST\_BROWNOUT}, LED TX verde titilando). &
+  \textbf{Mitigado:} Wi-Fi bajado a \SI{8.5}{dBm}, aviso en \cmd{INFO} + LED rojo, cambiar la batería bajo \SI{8.5}{\volt} y llevar repuesto. \\
+  \midrule
+
+  \textbf{IMU / Eléctrico:} reinicio silencioso del MPU6050 &
+  Caídas de tensión en arranques reinician el MPU6050 sin tumbar el I2C; el chip queda dormido (\cmd{PWR\_MGMT\_1=0x40}). &
+  Visto el 31/10/2026: devuelve 0 fijo y el rumbo deriva solo a $-b_z/65.5\;\si{\degree\per\second}$ sin marcar fallo I2C. &
+  \textbf{Resuelto en \archivo{firmware/volver}:} revisión de \cmd{PWR\_MGMT\_1} cada $\approx\SI{50}{\milli\second}$, reconfiguración automática y diagnóstico \cmd{IMU DIAG}. \\
+  \midrule
+
+  \textbf{Firmware / Red:} bloqueo de \cmd{loop()} al caer Wi-Fi &
+  \cmd{NetworkClient::write} reintenta bloqueando hasta $10\times\SI{1}{\second}$ si el PC desaparece sin cerrar el socket. &
+  Si el Wi-Fi fallaba en medio de un \cmd{GO}, el \cmd{loop()} se congelaba con los motores prendidos y el carro se salía del laberinto. &
+  \textbf{Resuelto en \archivo{main}:} comprobación con \cmd{select()} sin espera + \cmd{MSG\_DONTWAIT}, y reemplazo inmediato de sockets viejos. \\
+  \midrule
+
+  \textbf{Mecánica / Pista:} roce con cinta, pendiente y portapilas &
+  El borde de la cinta frena la llanta en los giros; el desnivel acelera de bajada; el portapilas iba flojo. &
+  El 26/10/2026 se cayó el portapilas cortando energía; la pendiente torció el rumbo 4--\SI{6}{\degree} y el roce forzó pulsos extra. &
+  \textbf{Mitigado:} fijación del portapilas, aproximación lenta (\cmd{pwm\_aprox}), calibrar de bajada y control PI de giro en \archivo{firmware/volver}. \\
+  \midrule
+
+  \textbf{Búsqueda / Costos:} \cmd{COSTO\_GIRO} desactualizado &
+  El valor por defecto \cmd{COSTO\_GIRO = 0.5} salió de una estimación vieja ($400/800\;\si{\milli\second}$). &
+  En pista girar toma 1.0--\SI{1.5}{\second} y avanzar 0.6--\SI{0.8}{\second} ($c_{\text{giro}} \approx 1.5\text{--}2.0$), así que UCS y A* subestiman el giro. &
+  \textbf{Pendiente (\archivo{docs/HANDOFF.md}):} actualizar el valor por defecto en \archivo{pc/modelo.py} y en el carro con los tiempos reales sobre celda de \SI{24}{\centi\meter}. \\
+  \midrule
+
+  \textbf{Firmware / Pruebas:} validaciones aún sin pista &
+  No hemos probado con el carro moviéndose el rechazo de calibración IMU (\cmd{RUIDO\_MAX\_CAL=25}), ni corrido \cmd{ALGO astar} en el hardware real. &
+  Posibles sorpresas de último minuto en la demo si el umbral de ruido rechaza de más o si falta algún ajuste en \cmd{ALGO}. &
+  \textbf{Pendiente:} probar el rechazo moviendo el carro a propósito en \cmd{GO} y correr \cmd{pc.enviar --algo astar} de punta a punta en el robot. \\
+\end{longtable}
+
+\subsection{Limitaciones del diseño actual}
+\label{subsec:limitaciones}
+
+Incluso con los bugs anteriores resueltos, el carro tiene cuatro límites que vienen de las decisiones iniciales del proyecto. El primero es que no explora: necesita recibir el mapa antes de arrancar y no replanifica si alguien mueve una pared (en \archivo{firmware/volver}, con \cmd{perdido=1}, prefiere parar con \cmd{ERR} si falta una pared esperada antes que perderse). El segundo es la falta de \emph{encoders}: cuando hay varias intersecciones abiertas seguidas sin paredes al frente (el caso que pusimos a propósito en \archivo{mapa2.txt}), el carro depende únicamente del tiempo compensado por voltaje y puede acumular un par de centímetros de error.
+
+El tercero es la sensibilidad de los TCRT5000 a la luz ambiente y al tipo de superficie, lo que nos obliga a apartar unos \SI{10}{\minute} para recalibrar \cmd{umbral}, \cmd{t\_celda} y \cmd{t\_alinear} cada vez que cambiamos de salón. El cuarto es el tope estático de $16\times 16$ celdas (\cmd{MAX\_ESTADOS = 1024}) en el firmware; sobra para cualquier pista física del curso, pero para laberintos mayores habría que subir las constantes o pasar la frontera a los \SI{8}{\mega\byte} de PSRAM del ESP32-S3.
+
+\subsection{Qué mejorar después}
+\label{subsec:mejoras-futuras}
+
+A corto plazo, antes de la sustentación, lo prioritario es cerrar las mezclas hacia \archivo{main} (\cmd{ucs}, \cmd{astar}, \cmd{greedy}, \cmd{dfs}, \archivo{firmware/astar}, \archivo{firmware/volver} y \archivo{pc/demo.py}), ejecutar \cmd{HW-04} (bajar sensores a 5--\SI{8}{\milli\meter} con faldita opaca), corregir el roce de las llantas con la cinta y ajustar \cmd{COSTO\_GIRO} a los tiempos reales. También es fácil optimizar la media vuelta en el ejecutor para que \cmd{R R} o \cmd{L L} se ejecuten como un solo giro de \SI{180}{\degree} sin frenar en medio, sin tocar el contrato de ruta.
+
+Si hiciéramos una segunda versión del hardware, cambiaríamos dos piezas desde el día uno: el L298N por un driver MOSFET de baja caída como el DRV8833 o el TB6612FNG ($v_{\text{caida}} \approx \SI{0.3}{\volt}$), y los N20 de 500~RPM por N20 de 100--200~RPM con \emph{encoders} magnéticos. Con encoders el carro avanzaría por milímetros reales en vez de milisegundos, y con un regulador \emph{buck} de \SI{5}{\volt} conectado al mismo pack 2S~18650 dejaríamos de comprar baterías alcalinas de \SI{9}{\volt}.
+
+Más adelante, como anotamos en los próximos pasos del Excel~\cite{excel2026organizacion}, hay dos extensiones naturales para salir del mapa conocido. La primera es montar sensores de distancia (ultrasónicos o ToF VL53L0X) para levantar paredes sobre la marcha aprovechando los 4 bits libres de \cmd{paredes[f][c]} y correr \emph{Flood Fill} o \emph{D* Lite}~\cite{russell2021aima,siegwart2011autonomous}. La segunda es usar la cámara de un celular apuntando desde arriba para detectar el laberinto físico con visión por computador y mandarle la grilla al carro por Wi-Fi sin escribir el \archivo{.txt} a mano.

@@ -1,0 +1,194 @@
+% ============================================================================
+% Sección 6: Experimentación, resultados y comparación de caminos
+% ============================================================================
+\section{Experimentación, resultados y comparación de caminos}
+\label{sec:resultados}
+
+\begin{porcompletar}[Estado de la sección experimental]
+  Aquí recogemos los datos que ya medimos en pista (sesiones del 26/10, 31/10 y 04/11/2026) y los primeros resultados de simulación (\archivo{resultados/comparacion.csv}). Las tablas vacías y los bloques marcados quedan listos para llenarse apenas terminemos de mezclar las ramas de algoritmos (\cmd{SW-04}, \cmd{SW-05}, \cmd{SW-06}, \cmd{SW-02}) y hagamos las corridas finales en los mapas físicos definitivos y en exterior (\cmd{INT-01}, \cmd{INT-02} e \cmd{INT-03})~\cite{excel2026organizacion}.
+\end{porcompletar}
+
+\subsection{Escenarios de prueba y diseño experimental}
+\label{subsec:escenarios}
+
+Dividimos las pruebas en dos frentes. En simulación corremos \archivo{pc/comparar.py} (rama \archivo{algo/astar}) con todos los planificadores registrados (\cmd{bfs}, \cmd{ucs}, \cmd{astar}, \cmd{greedy} y, apenas entre su PR, \cmd{dfs}) sobre los siete mapas del repositorio, tomando la mediana de 5 o 20 corridas porque en mapas pequeños una sola medición de tiempo es muy ruidosa. También queremos repetir la corrida con $c_{\text{giro}} \in \{0.5, 1.5, 2.0\}$ para ver cuándo se separan las rutas de BFS y A*/UCS~\cite{handoff2026doc}.
+
+En pista física (\cmd{INT-01} a \cmd{INT-03}) probamos el robot sobre laberintos armados con cinta aislante negra mate sobre base blanca (\texttt{DEC-03}), midiendo cuántas veces llega a la meta sin intervención, cuánto tarda en segundos y qué tan cerca queda ese tiempo del costo planeado, primero en interior y luego bajo luz solar directa. La \cref{tab:escenarios-eval} lista los siete escenarios previstos.
+
+\begin{table}[htbp]
+  \centering
+  \caption{Escenarios de evaluación definidos para simulación y pista física.}
+  \label{tab:escenarios-eval}
+  \footnotesize
+  \begin{tabularx}{\textwidth}{@{}p{2.9cm}p{2.8cm}ccX@{}}
+    \toprule
+    \textbf{Escenario} & \textbf{Origen / Estado} & \textbf{Tamaño} & \textbf{Celda} & \textbf{Propósito experimental} \\
+    \midrule
+    \archivo{prueba\_4x4.txt} & \archivo{main} (\textcolor{unalverde}{\textbf{ok}}) & $4\times 4$ & \SI{22}{\centi\meter} & Prototipo impreso ($91\times\SI{91}{\centi\meter}$) forrado en cinta; primera validación completa de autonomía y giros con IMU. \\
+    \archivo{ejemplo\_5x5.txt} & \archivo{main} (\textcolor{unalverde}{\textbf{ok}}) & $5\times 5$ & Sim. & Mapa de referencia en pruebas unitarias y paridad Python--C++. \\
+    \archivo{mapa1.txt} & \archivo{mapas/mapa1} (\textcolor{azulclaro}{\textbf{PR}}) & $4\times 3$ & \SI{24}{\centi\meter} & Mapa físico 1 de demo ($84\times\SI{108}{\centi\meter}$ con margen); tramos rectos con pared al fondo para alinear con el frontal. \\
+    \archivo{mapa2.txt} & \archivo{mapas/mapa2} (\textcolor{azulclaro}{\textbf{PR}}) & $4\times 3$ & \SI{24}{\centi\meter} & Mapa físico 2: incluye una intersección abierta donde la ruta más corta obliga a girar teniendo paso libre al frente. \\
+    \archivo{simulado\_6x6.txt} & \archivo{mapas/SW-05} (\textcolor{azulclaro}{\textbf{PR}}) & $6\times 6$ & Sim. & Laberinto aleatorio con ciclos (\cmd{ciclos=0.2}, \cmd{semilla=106}); varias rutas competitivas. \\
+    \archivo{simulado\_10x10.txt} & \archivo{mapas/SW-05} (\textcolor{azulclaro}{\textbf{PR}}) & $10\times 10$ & Sim. & Escala intermedia (\cmd{ciclos=0.2}, \cmd{semilla=38}) para notar diferencias en nodos expandidos. \\
+    \archivo{simulado\_16x16.txt} & \archivo{mapas/SW-05} (\textcolor{azulclaro}{\textbf{PR}}) & $16\times 16$ & Sim. & Tope de memoria del ESP32-S3 (\cmd{MAX\_ESTADOS=1024}, \cmd{ciclos=0.2}, \cmd{semilla=23}). \\
+    \bottomrule
+  \end{tabularx}
+\end{table}
+
+\subsection{Métricas registradas}
+\label{subsec:metricas}
+
+Para cada corrida anotamos el número de acciones ($N_a$) separado en avances ($N_F$) y giros ($N_g = N_L + N_R$), el costo planeado $C = N_F c_F + N_g c_{\text{giro}}$ y los nodos expandidos ($E$) antes de sacar la meta de la frontera. En tiempo de cómputo medimos la mediana en Python ($t_{\text{PC}}$ en \si{\milli\second}) y el tiempo a bordo del ESP32-S3 reportado por \cmd{PLAN} ($t_{\text{MCU}}$ en \si{\micro\second}). En las pruebas físicas añadimos el tiempo real desde \cmd{GO} hasta \cmd{OK META} ($t_{\text{real}}$ en \si{\second}), el error angular residual de cada giro junto con el conteo de pulsos y la tasa de éxito $k/N$ sin tocar el carro.
+
+\subsection{Resultados preliminares ya verificados}
+\label{subsec:resultados-preliminares}
+
+Aunque todavía faltan los ensayos en \archivo{mapa1} y \archivo{mapa2}, ya tenemos mediciones sólidas de las primeras sesiones en pista y de simulación.
+
+\subsubsection{Pruebas físicas preliminares}
+
+La \cref{tab:resultados-pista-prelim} resume las pruebas hechas sobre el robot entre el 26/10 y el 04/11/2026~\cite{arquitectura2026doc,handoff2026doc}.
+
+\begin{table}[htbp]
+  \centering
+  \caption{Resultados preliminares verificados en el robot físico.}
+  \label{tab:resultados-pista-prelim}
+  \footnotesize
+  \begin{tabularx}{\textwidth}{@{}p{3.0cm}p{3.2cm}p{2.8cm}X@{}}
+    \toprule
+    \textbf{Prueba / Fecha} & \textbf{Configuración} & \textbf{Resultado clave} & \textbf{Observaciones técnicas} \\
+    \midrule
+    Recorrido \archivo{prueba\_4x4} (26/10/2026) & 4$\times$AA + 9\,V, celda \SI{22}{\centi\meter}, cinta aislante, BFS a bordo, PWM fijo + IMU & \textbf{6/6 en meta} ($\approx\SI{14}{\second}$) & Ruta de 18 acciones (12 \cmd{F}, 6 giros). Error de giro $\pm\SI{4}{\degree}$ con 0--4 pulsos; piso con leve pendiente compensada con \cmd{pwm\_aprox=140} y \cmd{t\_alinear=0}. \\
+    Blindaje de red en \cmd{GO} (27/10/2026) & Apagado intencional del Wi-Fi del PC a mitad de recorrido & \textbf{100\,\% autónomo} & Llegó a la meta sin colgar \cmd{loop()} gracias al envío TCP sin bloqueo (\cmd{select} + \cmd{MSG\_DONTWAIT}). \\
+    Deriva estática MPU6050 (26/10/2026) & Tarea FreeRTOS \SI{500}{\hertz}, DLPF \SI{44}{\hertz}, carro quieto & $\approx\SI{0.2}{\degree}$ en \SI{48}{\second} & Ruido en reposo $\approx 2$ LSB, muy lejos del umbral de rechazo \cmd{RUIDO\_MAX\_CAL=25}. \\
+    Control PI de giros (31/10/2026, PR) & Pack 2S 18650, \archivo{firmware/volver}, \cmd{antic=2}, 4~R + 4~L & \textbf{R $+0.6^\circ\pm 1.9^\circ$}, \textbf{L $-1.5^\circ\pm 0.5^\circ$} & \textbf{0 pulsos correctivos}; borró los sobrepasos de 6--\SI{39}{\degree} que salían con PWM fijo al caer el pack. \\
+    Caída de voltaje (04/11/2026, PR) & Pack 2S 18650 (\SI{8.0}{\volt} reposo), divisor GPIO~1 (\cmd{bat\_k} 4.195) & $\Delta V \approx \SI{0.60}{\volt}$ (giro), $\SI{0.36}{\volt}$ (avance) & Confirmó que conviene filtrar $V_{\text{bat}}$ ($\tau\approx\SI{1}{\second}$) para no reaccionar a los picos de arranque. \\
+    \bottomrule
+  \end{tabularx}
+\end{table}
+
+\subsubsection{Comparación preliminar en simulación (BFS vs.\ A*)}
+
+La \cref{tab:sim-preliminar} y la \cref{fig:preliminar-nodos} muestran los números que ya dejó \archivo{resultados/comparacion.csv} en la rama \archivo{origin/algo/astar} con $c_{\text{giro}} = 0.5$ (y paridad confirmada contra C++ en \archivo{test\_planner\_cpp.py}). En estos dos mapas y con $c_{\text{giro}} = 0.5$, BFS y A* devuelven la misma ruta, pero A* recorta los nodos expandidos en un \SI{22.2}{\percent} sobre \archivo{ejemplo\_5x5} ($36 \rightarrow 28$) y en un \SI{15.4}{\percent} sobre \archivo{prueba\_4x4} ($52 \rightarrow 44$). El tiempo en PC queda ligeramente por encima en A* (\SI{0.110}{\milli\second} vs.\ \SI{0.102}{\milli\second}) porque en grafos tan pequeños el costo del montículo pesa más que ahorrarse ocho expansiones; esperamos ver la ventaja real de tiempo en los mapas de $10\times 10$ y $16\times 16$.
+
+\begin{table}[htbp]
+  \centering
+  \caption{Resultados preliminares de simulación registrados en \archivo{resultados/comparacion.csv} ($c_{\text{giro}} = 0.5$, mediana de 5 corridas).}
+  \label{tab:sim-preliminar}
+  \footnotesize
+  \begin{tabularx}{\textwidth}{@{}Xccccccc@{}}
+    \toprule
+    \textbf{Mapa} & \textbf{Algoritmo} & \textbf{Optimiza} & \textbf{Acciones} & \textbf{Giros} & \textbf{Costo} & \textbf{Expandidos} & \textbf{Tiempo (\si{\milli\second})} \\
+    \midrule
+    \archivo{ejemplo\_5x5} & \cmd{bfs}   & acciones & 15 & 5 & 12.5 & 36 & 0.102 \\
+    \archivo{ejemplo\_5x5} & \cmd{astar} & costo    & 15 & 5 & 12.5 & 28 & 0.110 \\
+    \midrule
+    \archivo{prueba\_4x4}  & \cmd{bfs}   & acciones & 18 & 6 & 15.0 & 52 & 0.144 \\
+    \archivo{prueba\_4x4}  & \cmd{astar} & costo    & 18 & 6 & 15.0 & 44 & 0.167 \\
+    \bottomrule
+  \end{tabularx}
+\end{table}
+
+\begin{figure}[htbp]
+  \centering
+  \begin{tikzpicture}
+    \begin{axis}[
+      ybar=6pt,
+      bar width=16pt,
+      width=0.82\textwidth,
+      height=5.6cm,
+      ylabel={Nodos expandidos ($E$)},
+      symbolic x coords={ejemplo\_5x5, prueba\_4x4, mapa1 (pend.), mapa2 (pend.), sim\_16x16 (pend.)},
+      xtick=data,
+      xticklabel style={font=\footnotesize, rotate=12, anchor=east},
+      ymin=0,
+      ymax=65,
+      nodes near coords,
+      nodes near coords style={font=\scriptsize},
+      legend style={at={(0.5,1.04)}, anchor=south, legend columns=-1, font=\footnotesize},
+      ymajorgrids=true,
+      grid style=dashed,
+      enlarge x limits=0.14
+    ]
+      \addplot[fill=azuldoc!80, draw=azuldoc] coordinates {
+        (ejemplo\_5x5, 36)
+        (prueba\_4x4, 52)
+        (mapa1 (pend.), 0)
+        (mapa2 (pend.), 0)
+        (sim\_16x16 (pend.), 0)
+      };
+      \addplot[fill=unalverde!75, draw=unalverde] coordinates {
+        (ejemplo\_5x5, 28)
+        (prueba\_4x4, 44)
+        (mapa1 (pend.), 0)
+        (mapa2 (pend.), 0)
+        (sim\_16x16 (pend.), 0)
+      };
+      \legend{BFS (validado), A* (preliminar / por completar en mapas nuevos)}
+    \end{axis}
+  \end{tikzpicture}
+  \caption{Comparación preliminar de nodos expandidos entre BFS y A* ($c_{\text{giro}} = 0.5$) y plantilla preparada para incorporar \archivo{mapa1}, \archivo{mapa2}, \archivo{simulado\_16x16} y los algoritmos UCS, Greedy y DFS tras la integración final.}
+  \label{fig:preliminar-nodos}
+\end{figure}
+
+Para los dos mapas físicos propuestos (\archivo{origin/mapas/mapa1} y \archivo{origin/mapas/mapa2}) ya están calculadas las rutas de referencia de BFS en sus archivos \archivo{.esperado}: \archivo{mapa1.txt} da \cmd{F R F L F R F F} (8 acciones: 5 avances y 3 giros; costo $6.5$ con $c_{\text{giro}}=0.5$, o $11.0$ con $c_{\text{giro}}=2.0$) y \archivo{mapa2.txt} da \cmd{F R F F L F R F} (también 5 avances y 3 giros, obligando a girar a la derecha en $(0,1)$ aunque haya celda libre adelante).
+
+\subsection{Experimentos y tablas por completar}
+\label{subsec:por-completar-exp}
+
+\begin{porcompletar}[Simulación completa con los cinco algoritmos (\cmd{SW-06})]
+  Apenas queden mezclados en \archivo{main} \cmd{ucs} (\cmd{SW-05}), \cmd{astar} (\cmd{SW-06}), \cmd{greedy} (\cmd{SW-02}) y \cmd{dfs} (\cmd{SW-04}), correremos:
+  \begin{center}
+    \cmd{python -m pc.comparar --costo-giro 2.0 --repeticiones 20}
+  \end{center}
+  para llenar la \cref{tab:plantilla-comparacion-all} y completar la gráfica de nodos expandidos y costo. Con $c_{\text{giro}} \approx 2.0$ buscamos mostrar casos reales donde BFS y UCS/A* elijan caminos distintos.
+\end{porcompletar}
+
+\begin{table}[htbp]
+  \centering
+  \caption{[POR COMPLETAR] Matriz comparativa de los 5 algoritmos en simulación ($c_{\text{giro}}$ ajustado a tiempos reales).}
+  \label{tab:plantilla-comparacion-all}
+  \scriptsize
+  \begin{tabularx}{\textwidth}{@{}p{2.35cm}Xcccccc@{}}
+    \toprule
+    \textbf{Mapa} & \textbf{Algoritmo} & \textbf{Acc.} & \textbf{Giros} & \textbf{Costo} & \textbf{Exp.} & \textbf{$t_{\text{PC}}$ (\si{\milli\second})} & \textbf{$t_{\text{MCU}}$ (\si{\micro\second})} \\
+    \midrule
+    \multirow{5}{*}{\archivo{mapa1} ($4\times 3$)}
+      & BFS    & 8   & 3   & \emph{[pend.]} & \emph{[pend.]} & \emph{[pend.]} & \emph{[pend.]} \\
+      & UCS    & \emph{[pend.]} & \emph{[pend.]} & \emph{[pend.]} & \emph{[pend.]} & \emph{[pend.]} & N/A \\
+      & A*     & \emph{[pend.]} & \emph{[pend.]} & \emph{[pend.]} & \emph{[pend.]} & \emph{[pend.]} & \emph{[pend.]} \\
+      & Greedy & \emph{[pend.]} & \emph{[pend.]} & \emph{[pend.]} & \emph{[pend.]} & \emph{[pend.]} & N/A \\
+      & DFS    & \emph{[pend.]} & \emph{[pend.]} & \emph{[pend.]} & \emph{[pend.]} & \emph{[pend.]} & N/A \\
+    \midrule
+    \multirow{2}{*}{\archivo{mapa2} ($4\times 3$)}
+      & BFS    & 8   & 3   & \emph{[pend.]} & \emph{[pend.]} & \emph{[pend.]} & \emph{[pend.]} \\
+      & UCS / A* / Greedy / DFS & \emph{[pend.]} & \emph{[pend.]} & \emph{[pend.]} & \emph{[pend.]} & \emph{[pend.]} & \emph{[pend.]} \\
+    \midrule
+    \archivo{simulado\_6x6}   & Todos (5 alg.) & \emph{[pend.]} & \emph{[pend.]} & \emph{[pend.]} & \emph{[pend.]} & \emph{[pend.]} & \emph{[pend.]} \\
+    \archivo{simulado\_10x10} & Todos (5 alg.) & \emph{[pend.]} & \emph{[pend.]} & \emph{[pend.]} & \emph{[pend.]} & \emph{[pend.]} & \emph{[pend.]} \\
+    \archivo{simulado\_16x16} & Todos (5 alg.) & \emph{[pend.]} & \emph{[pend.]} & \emph{[pend.]} & \emph{[pend.]} & \emph{[pend.]} & \emph{[pend.]} \\
+    \bottomrule
+  \end{tabularx}
+\end{table}
+
+\begin{porcompletar}[Corridas físicas en interior y exterior (\cmd{INT-01} a \cmd{INT-03})]
+  Falta diligenciar la \cref{tab:plantilla-pista-final} al completar las tres pruebas pendientes en el carro: \cmd{INT-01} (3 de 3 recorridos en \archivo{mapa1} y \archivo{mapa2} de \SI{24}{\centi\meter}), \cmd{INT-02} (ensayo al sol con sensores bajados a 5--\SI{8}{\milli\meter} y faldita de cartón según \cmd{HW-04} y \cmd{LAB-03}) e \cmd{INT-03} (cronometraje en pista comparando BFS contra A* para contrastar tiempo real y costo planeado).
+\end{porcompletar}
+
+\begin{table}[htbp]
+  \centering
+  \caption{[POR COMPLETAR] Resultados experimentales en el robot físico (interior y exterior).}
+  \label{tab:plantilla-pista-final}
+  \footnotesize
+  \begin{tabularx}{\textwidth}{@{}llccccX@{}}
+    \toprule
+    \textbf{Prueba} & \textbf{Mapa / Algoritmo} & \textbf{Condición} & \textbf{Éxito ($k/N$)} & \textbf{Costo ($C$)} & \textbf{$t_{\text{real}}$ (\si{\second})} & \textbf{Incidencias / Calibración} \\
+    \midrule
+    \cmd{INT-01a} & \archivo{mapa1} / BFS & Interior & \emph{[pend. / 3]} & \emph{[pend.]} & \emph{[pend.]} & \emph{[umbral, t\_celda, V\_bat]} \\
+    \cmd{INT-01b} & \archivo{mapa2} / BFS & Interior & \emph{[pend. / 3]} & \emph{[pend.]} & \emph{[pend.]} & \emph{[giro en intersección abierta]} \\
+    \cmd{INT-02}  & \archivo{mapa1} / BFS & Exterior (sol) & \emph{[pend. / 3]} & \emph{[pend.]} & \emph{[pend.]} & \emph{[lectura IR al sol + faldita]} \\
+    \cmd{INT-03a} & \archivo{mapa1} / A*  & Interior / Ext. & \emph{[pend. / 3]} & \emph{[pend.]} & \emph{[pend.]} & \emph{[contraste $t_{\text{real}}$ vs.\ BFS]} \\
+    \cmd{INT-03b} & \archivo{mapa2} / A*  & Interior / Ext. & \emph{[pend. / 3]} & \emph{[pend.]} & \emph{[pend.]} & \emph{[contraste $t_{\text{real}}$ vs.\ BFS]} \\
+    \bottomrule
+  \end{tabularx}
+\end{table}

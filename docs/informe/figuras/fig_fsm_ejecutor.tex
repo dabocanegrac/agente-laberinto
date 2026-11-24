@@ -1,0 +1,66 @@
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}[
+  >=Stealth,
+  node distance=2.5cm,
+  every state/.style={
+    thick,
+    draw=azuldoc,
+    fill=azulfondo,
+    text=azuldoc,
+    font=\bfseries\sffamily\footnotesize,
+    minimum size=1.55cm,
+    align=center
+  },
+  initial text={Inicio / \cmd{STOP}},
+  trans/.style={->, thick, draw=gristexto},
+  lbl/.style={font=\scriptsize\sffamily, text=black, align=center, fill=white, fill opacity=0.88, text opacity=1, inner sep=1.5pt}
+]
+
+  % Estados con coordenadas explícitas para evitar cruces
+  \node[state, initial above, fill=verdefondo, draw=unalverde, text=unalverde] (quieto) at (0, 4.4) {QUIETO};
+  \node[state] (avanzar) at (6.4, 6.8) {AVANZAR};
+  \node[state, fill=ambarfondo, draw=ambarborde, text=ambarborde] (buscar) at (13.4, 6.8) {BUSCAR\\LINEA};
+  \node[state] (alinear) at (13.4, 2.8) {ALINEAR};
+  \node[state] (pausa) at (6.4, 2.0) {PAUSA};
+  \node[state] (girar) at (-0.4, -0.4) {GIRAR};
+  \node[state] (pulso) at (6.4, -2.4) {PULSO};
+
+  % Desde QUIETO
+  \path[trans] (quieto) edge[bend left=18] node[lbl, above, sloped] {\cmd{GO} (si $a=\mathrm{F}$) / \cmd{PASO F,A}} (avanzar);
+  \path[trans] (quieto) edge[bend right=16] node[lbl, left] {\cmd{GO} (si $a\in\{\mathrm{L},\mathrm{R}\}$)\\o \cmd{PASO L,R}} (girar);
+
+  % Desde AVANZAR
+  \path[trans] (avanzar) edge node[lbl, above] {$alinear \land t \ge dur$} (buscar);
+  \path[trans] (avanzar) edge node[lbl, above, sloped] {$alinear \land t \ge (n-1)t_{\text{celda}} \land \text{cen}>\text{umbral}$} (alinear);
+  \path[trans] (avanzar) edge[bend right=18] node[lbl, left] {$\neg alinear \land t \ge dur$\\(\cmd{frenar()})} (pausa);
+
+  % Desde BUSCAR_LINEA
+  \path[trans] (buscar) edge node[lbl, right] {$\text{cen}>\text{umbral}$} (alinear);
+  \path[trans] (buscar) to[out=-15, in=5, looseness=1.45] node[lbl, right, pos=0.52] {$t \ge dur$ (\cmd{frenar()})\\$\neg perdido$ o \cmd{PASO A}} (pausa);
+
+  % Desde ALINEAR
+  \path[trans] (alinear) edge node[lbl, below, sloped] {$t \ge t_{\text{alinear}}$ (\cmd{frenar()})} (pausa);
+
+  % Desde GIRAR
+  \path[trans] (girar) edge[bend left=18] node[lbl, above, sloped, pos=0.48] {corte IMU o $t \ge dur$ (\cmd{frenar()})} (pausa);
+
+  % Desde PAUSA
+  \path[trans] (pausa) edge[bend right=18] node[lbl, right] {$t \ge pausa \land sig=\mathrm{F}$} (avanzar);
+  \path[trans] (pausa) edge[bend left=18] node[lbl, below, sloped, pos=0.62] {$t \ge pausa \land sig\in\{\mathrm{L},\mathrm{R}\}$} (girar);
+  \path[trans] (pausa) edge[bend right=10] node[lbl, above, sloped, pos=0.52] {$t \ge pausa \land (\text{fin ruta} \lor \text{PASO})$} (quieto);
+  \path[trans] (pausa) edge[bend right=22] node[lbl, left, pos=0.72] {$t \ge pausa \land |e|>\text{tol}$\\$\land\; p<8$} (pulso);
+
+  % Desde PULSO
+  \path[trans] (pulso) edge[bend right=24] node[lbl, right, pos=0.50] {$t \ge t_{\text{pulso}}$\\(\cmd{ruedas(0,0)})} (pausa);
+
+  % Nota de contingencia / parada inmediata
+  \node[draw=rojoborde, fill=rojofondo, rounded corners=3pt, text=rojoborde, font=\scriptsize\sffamily, align=left, inner sep=5pt]
+    at (13.4, -1.6) {%
+      \textbf{Transición inmediata a \texttt{QUIETO} (\cmd{parar()}):}\\
+      \textbullet\ Comando \cmd{STOP} o nuevo \cmd{MAPA} en cualquier estado\\
+      \textbullet\ Timeout global de \cmd{GO} ($>\SI{90}{\second}$)\\
+      \textbullet\ Error de giro invertido, giro trabado o $perdido=1$ en \texttt{BUSCAR\_LINEA}
+    };
+
+\end{tikzpicture}%
+}%

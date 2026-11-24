@@ -1,0 +1,154 @@
+\section{Funcionamiento del carro y ciclo de control}
+\label{sec:control}
+
+El firmware en \archivo{arduino/agente/agente.ino} recibe el mapa, calcula la ruta a bordo y gobierna los motores en tiempo real sobre el ESP32-S3~\cite{espressif2024esp32s3,repo2026agentelaberinto}. Aquí describimos cómo trabaja el ejecutor ya probado en pista en \texttt{main}, junto con las mejoras que añadimos en \texttt{firmware/volver} (control PI de velocidad en giros, lectura y compensación de batería, vigilancia del MPU6050 y comando \cmd{VOLVER}) y la selección de planificador de \texttt{firmware/astar}~\cite{arquitectura2026doc,handoff2026doc}.
+
+% ----------------------------------------------------------------------------
+\subsection{Ejecución sin bloqueos y tarea FreeRTOS del giroscopio}
+\label{subsec:tiempo-real}
+
+El \cmd{loop()} principal no usa \cmd{delay()} durante la operación normal. En cada vuelta revisa en orden las actualizaciones inalámbricas (\cmd{ArduinoOTA.handle()}, que para los motores en \cmd{onStart} antes de escribir la flash), las consolas TCP y Serial (\cmd{atenderTcp()} y \cmd{consolaSerial.leer()}), la máquina de estados del carro (\cmd{atenderEjecutor()}), el muestreo de batería en \texttt{firmware/volver} (\cmd{atenderBateria()}, cada \SI{5}{\milli\second} andando y \SI{100}{\milli\second} quieto), las alertas de la IMU (\cmd{imu::seCayo()} y \cmd{imu::seReinicio()}), la reconexión al \emph{hotspot} (\cmd{atenderRed()}) y, si el usuario dejó prendido el monitoreo continuo (\cmd{SENS ON} o \cmd{IMU ON}), imprime telemetría cada \SI{200}{\milli\second}.
+
+No bloquear el \cmd{loop()} sirve para que un \cmd{STOP} de emergencia o una carga OTA entren en pocos milisegundos con el carro andando. Aun así, integrar el giroscopio dentro del mismo \cmd{loop()} era riesgoso porque cualquier pausa del Wi-Fi saltaría muestras y torcería el ángulo. Por eso el driver \archivo{arduino/agente/src/imu/mpu6050.cpp} (escrito sin librerías externas) lanza su propia tarea en FreeRTOS con prioridad~3, por encima de la prioridad~1 del \cmd{loop()}:
+\begin{lstlisting}[language=C++,numbers=none]
+xTaskCreatePinnedToCore(tarea, "imu", 3072, nullptr, 3, nullptr,
+                        ARDUINO_RUNNING_CORE);
+\end{lstlisting}
+Con \cmd{vTaskDelayUntil(\&siguiente, pdMS\_TO\_TICKS(2))} la tarea corre exactamente a \SI{500}{\hertz} y se adelanta al \cmd{loop()} cada \SI{2}{\milli\second}. El bus I2C trabaja a \SI{400}{\kilo\hertz} con \cmd{Wire.setTimeOut(5)} para no colgar la placa si un cable se afloja. Al arrancar escribimos tres registros del MPU6050~\cite{invensense2013mpu6050}: \cmd{PWR\_MGMT\_1 = 0x01} (despierta el chip usando el reloj del eje~X, más estable que el RC interno), \cmd{CONFIG = 0x03} (filtro pasa-bajos digital a \SI{44}{\hertz} para limpiar la vibración de los N20) y \cmd{GYRO\_CONFIG = 0x08} (escala de $\pm\SI{500}{\degree\per\second}$, equivalente a $65.5\text{ LSB}/(\text{°/s})$).
+
+Cada \SI{2}{\milli\second} leemos los 16~bits de \cmd{GYRO\_ZOUT\_H/L} (\cmd{0x47}) e integramos el rumbo acumulado $\theta_k$ (positivo a la derecha visto desde arriba):
+\begin{equation}
+  \theta_k = \theta_{k-1} - s_{\text{imu}} \cdot \frac{z_k - b_z}{65.5} \cdot \Delta t_k,
+  \label{eq:integracion-imu}
+\end{equation}
+donde $s_{\text{imu}} \in \{+1, -1\}$ (\cmd{imu\_signo}) corrige si el módulo quedó boca abajo, $b_z$ es el sesgo en reposo y $\Delta t_k$ viene de \cmd{micros()}. En \texttt{firmware/volver}, la velocidad angular instantánea $\omega_k = -s_{\text{imu}}(z_k - b_z)/65.5$ pasa además por un filtro exponencial ($\alpha = 0.1$ a \SI{500}{\hertz}, $\tau \approx \SI{20}{\milli\second}$) para alimentar el lazo PI de los giros.
+
+Antes de rodar, \cmd{imu::calibrar()} pausa la integración y toma $400$ muestras espaciadas \SI{1000}{\micro\second} ($\approx\SI{0.4}{\second}$). Si alguien estaba acomodando el carro en ese instante, el sesgo sale mal y el robot se tuerce todo el recorrido; para atraparlo revisamos la desviación estándar cruda:
+\begin{equation}
+  \sigma = \sqrt{\frac{1}{n}\sum_{i=1}^{n} z_i^2 - \bar{z}^2} \le 25\text{ LSB}\quad (\approx\SI{0.38}{\degree\per\second}).
+\end{equation}
+Con el carro quieto $\sigma$ ronda apenas $2\text{ LSB}$, y la deriva que medimos en laboratorio fue de $\approx\SI{0.2}{\degree}$ en \SI{48}{\second}~\cite{arquitectura2026doc}. Al prender el robot reintenta hasta 3~veces; cuando recibe \cmd{GO}, \cmd{calibrarQuieto()} espera \SI{300}{\milli\second} para un segundo intento y, si sigue moviéndose, responde \cmd{ERR} y no arranca.
+
+% ----------------------------------------------------------------------------
+\subsection{Máquina de estados del ejecutor y agrupación de tramos}
+\label{subsec:fsm}
+
+El ejecutor funciona como una máquina de estados finitos de siete fases: \texttt{QUIETO}, \texttt{AVANZAR}, \texttt{BUSCAR\_LINEA}, \texttt{ALINEAR}, \texttt{GIRAR}, \texttt{PULSO} y \texttt{PAUSA} (\cref{fig:fsm-ejecutor}). La estructura \cmd{Ejecutor} guarda el instante de entrada \cmd{t0 = millis()} y la duración máxima \cmd{dur}, y en cada vuelta de \cmd{atenderEjecutor()} comprueba \cmd{transcurrido() >= dur}.
+
+\begin{figure}[htbp]
+  \centering
+  \input{figuras/fig_fsm_ejecutor}
+  \caption{Máquina de estados finitos del ejecutor en tiempo real (\archivo{agente.ino}). Todos los estados activos retornan a \texttt{PAUSA} mediante frenado activo antes de despachar la siguiente acción en \cmd{siguienteAccion()}.}
+  \label{fig:fsm-ejecutor}
+\end{figure}
+
+Cada vez que termina un movimiento, \cmd{siguienteAccion()} toma la siguiente instrucción de la ruta (calculada con \cmd{bfs} en \texttt{main}, o elegida con \cmd{ALGO [bfs|astar]} en \texttt{firmware/astar}). Si viene una \cmd{F}, junta todas las \cmd{F} seguidas en un solo tramo \cmd{F x}$n$ para no frenar en cada celda intermedia, actualiza la pose estimada \cmd{ej.pose} avanzando $n$ celdas y pregunta \cmd{mapa.hay\_pared(fila, col, ori)}. Si al final de ese tramo hay una pared de frente, prende \cmd{ej.alinear = true} y entra a \texttt{AVANZAR} con duración $n \cdot t_{\text{celda}}$. Si viene \cmd{L} o \cmd{R}, actualiza la orientación en \cmd{ej.pose}, fija el nuevo rumbo objetivo $\theta_{\text{obj}}$ y entra a \texttt{GIRAR}.
+
+En términos prácticos, cada fase hace una sola tarea: \texttt{AVANZAR} recorre el tramo recto, \texttt{BUSCAR\_LINEA} da un margen extra si la línea frontal no apareció a tiempo, \texttt{ALINEAR} completa los últimos centímetros tras tocar la línea, \texttt{GIRAR} rota \SI{90}{\degree}, \texttt{PAUSA} sostiene el freno durante \cmd{t\_freno} y luego deja el carro quieto hasta cumplir \cmd{pausa}, y \texttt{PULSO} da toques cortos si al terminar un giro el ángulo quedó fuera de tolerancia.
+
+% ----------------------------------------------------------------------------
+\subsection{Avance por celdas, corrección de trayectoria y alineación frontal}
+\label{subsec:avance-alineacion}
+
+Sin encóderes, avanzar recto exige mezclar tiempo calibrado con correcciones continuas dentro de \cmd{avanzarCorrigiendo()}.
+
+\subsubsection{Ley de control de trayectoria}
+La potencia base es \cmd{pwm} ($180$) durante casi todo el tramo, pero baja a \cmd{pwm\_aprox} ($140$) en la última celda cuando hay pared adelante (\cmd{aproximando()}). Llegar más despacio reduce el impulso y evita pasarse de la línea, sobre todo en pisos con pendiente. Sobre esa base se suman tres correcciones: un sesgo fijo \cmd{comp} ($\text{der} = \text{base} + \text{comp}$, $\text{izq} = \text{base} - \text{comp}$) por si un motor empuja más que el otro; un término proporcional con el giroscopio,
+\begin{equation}
+  c = \mathrm{clip}\!\left(\left\lfloor k_r \cdot (\theta - \theta_{\text{obj}}) \right\rfloor,\, -60,\, 60\right),
+  \label{eq:control-rumbo}
+\end{equation}
+que se suma a la rueda derecha y se resta a la izquierda (si el carro se tuerce a la derecha, $\theta > \theta_{\text{obj}}$, acelerar la derecha lo devuelve); y el respaldo de los TCRT5000 laterales (\cmd{kp} = $50$)~\cite{vishay2012tcrt5000}: si solo el izquierdo ve negro ($>\cmd{umbral}$), se frena la rueda derecha para alejarse de la cinta, y lo contrario si pisa el derecho.
+
+Al probar \cmd{pwm\_aprox} en \texttt{firmware/volver} apareció un detalle: si el término de corrección resta demasiado a una rueda, su PWM cae debajo de \cmd{pwm\_min} ($120$) y ese motor N20 se clava en la zona muerta. Cuando $\min(\text{der}, \text{izq}) < \text{pwm\_min}$, el código suma la diferencia faltante a las dos ruedas a la vez; así mantiene la corrección sin detener el motor interno.
+
+\subsubsection{Alineación geométrica contra paredes frontales}
+Aunque \cmd{t\_celda} esté bien calibrado, el error longitudinal se acumula celda tras celda. Lo que nos salva es usar las paredes frontales del laberinto como tope óptico (\cref{fig:alineacion-pared}). En una celda de \SI{24}{\centi\meter} hay \SI{12}{\centi\meter} del centro a la línea, y el sensor frontal está \SI{16}{\centi\meter} delante del eje de las ruedas~\cite{arquitectura2026doc}.
+
+\begin{figure}[htbp]
+  \centering
+  \input{figuras/fig_alineacion_pared}
+  \caption{Secuencia geométrica de alineación contra pared frontal en tres fases (celda de \SI{24}{\centi\meter}). La referencia física de la línea negra restablece el error longitudinal acumulado durante el avance por tiempo.}
+  \label{fig:alineacion-pared}
+\end{figure}
+
+Durante las primeras $n - 1$ celdas del tramo ignoramos el sensor frontal para que no dispare por error sobre la línea de salida. Al cruzar $t \ge (n - 1)\,t_{\text{celda}}$, la velocidad baja a \cmd{pwm\_aprox} y se habilita el frontal. El sensor pisa la cinta cuando al eje le faltan unos \SI{4}{\centi\meter} para el centro ($16 - 12 = \SI{4}{\centi\meter}$; en la pista de prueba de \SI{22}{\centi\meter} faltaban $\approx\SI{6}{\centi\meter}$) y dispara el estado \texttt{ALINEAR}. Si el tiempo $n\,t_{\text{celda}}$ vence sin ver negro, el carro entra en \texttt{BUSCAR\_LINEA}: en \texttt{main} busca una celda adicional y sigue por tiempo si no aparece; en \texttt{firmware/volver} busca durante \cmd{t\_buscar} (\SI{500}{\milli\second}) y, si \cmd{perdido = 1}, detiene la corrida con \cmd{ERR} en vez de seguir desubicado. Una vez en \texttt{ALINEAR}, el carro avanza \cmd{t\_alinear} milisegundos más y frena, dejando el eje centrado en la celda (y la punta del chasis $\sim\SI{5}{\centi\meter}$ más allá de la cinta) con el error longitudinal de nuevo en cero.
+
+\subsubsection{Frenado por contramarcha}
+El L298N tiene freno en corto (\cmd{IN1 = IN2 = HIGH})~\cite{st2000l298n}, pero con $4\times\text{AA}$ casi no frena: la fuerza contraelectromotriz de los N20 apenas vence la caída de $\approx\SI{2}{\volt}$ de los transistores y el carro sigue rodando por inercia~\cite{arquitectura2026doc}. Con \cmd{pwm\_freno > 0}, \cmd{frenar()} invierte brevemente cada motor ($-\mathrm{signo}(\text{ult}) \cdot \text{pwm\_freno}$) durante \cmd{t\_freno} (\SI{40}{\milli\second}) al entrar a \texttt{PAUSA}. Ese frenado en reversa para el carro casi en seco y hace que la distancia recorrida sea proporcional al tiempo de avance.
+
+% ----------------------------------------------------------------------------
+\subsection{Control de giros de \SI{90}{\degree} y compensación por batería}
+\label{subsec:giros}
+
+Los giros nos obligaron a iterar tres veces hasta conseguir algo repetible (\cref{tab:generaciones-giro}).
+
+\begin{table}[htbp]
+  \centering
+  \caption{Evolución cuantitativa de las tres generaciones de control de giros de \SI{90}{\degree}.}
+  \label{tab:generaciones-giro}
+  \small
+  \begin{tabularx}{\textwidth}{@{}>{\raggedright\arraybackslash}p{3.0cm} >{\raggedright\arraybackslash}p{3.3cm} >{\raggedright\arraybackslash}p{3.1cm} >{\raggedright\arraybackslash}X@{}}
+    \toprule
+    \textbf{Generación} & \textbf{Estado} & \textbf{Error medido} & \textbf{Comportamiento y limitaciones} \\
+    \midrule
+    1. Por tiempo (\cmd{t\_giro}) & Respaldo si falla IMU & $\pm 15\text{--}\SI{25}{\degree}$ & Lazo abierto; depende del voltaje de pilas, pendiente y roce con cinta. \\
+    2. IMU + PWM fijo + pulsos & \badgeok{} (26/10/2026) & $\pm\SI{4}{\degree}$ ($0$--$4$ pulsos) & Objetivo absoluto; corte anticipado (\cmd{giro\_antic\_r/l} = $6^\circ$) y hasta 8 pulsos sin contramarcha. \\
+    3. IMU + PI de velocidad & \badgepr{} (31/10/2026) & R: $+0.6^\circ \pm 1.9^\circ$; L: $-1.5^\circ \pm 0.5^\circ$ ($0$ pulsos) & Rampa de velocidad angular ($120\to\SI{50}{\degree\per\second}$), frenado en reversa y \cmd{antic} = $2^\circ$. \\
+    \bottomrule
+  \end{tabularx}
+\end{table}
+
+Al principio probamos girar por tiempo y el resultado fue malo: errores de $\pm 15$ a $\SI{25}{\degree}$ según la carga de las pilas o si la rueda rozaba el borde de la cinta. Al pasar al MPU6050 fijamos una regla sencilla: durante un \cmd{GO}, la referencia $\theta_{\text{obj}}$ siempre es absoluta ($0^\circ, \pm 90^\circ, \pm 180^\circ, \dots$ desde la salida). Si un giro queda corto por \SI{3}{\degree}, el siguiente se encarga de absorber ese desvío y el error nunca se suma~\cite{siegwart2011autonomous}.
+
+En \texttt{main}, el carro gira a \cmd{pwm\_giro} ($230$) y corta \cmd{giro\_antic\_r/l} ($6^\circ$) antes de llegar a los \SI{90}{\degree} para que la inercia complete el ángulo. Si al acabar \texttt{PAUSA} el error $|e| = |\theta_{\text{obj}} - \theta|$ pasa de \cmd{giro\_tol} ($4^\circ$), aplica hasta $8$ pulsos en \texttt{PULSO} (\cmd{t\_pulso} = \SI{60}{\milli\second}). Esos pulsos cortan con \cmd{ruedas(0, 0)} sin contramarcha, porque en un toque tan corto la reversa devolvería el carro a donde empezó.
+
+Cuando cambiamos a celdas 18650 en \texttt{firmware/volver}, el PWM fijo volvió a fallar por otro lado: la velocidad de giro bailaba entre $105$ y \SI{300}{\degree\per\second} según el piso y la caída del pack, y el carro se pasaba entre $6$ y \SI{39}{\degree} al cortar. Para domar esa inercia escribimos \cmd{controlarVelocidadGiro()}, que cada \SI{10}{\milli\second} baja la velocidad objetivo linealmente desde \cmd{giro\_vel} (\SI{120}{\degree\per\second}) hasta \cmd{giro\_vel\_min} (\SI{50}{\degree\per\second}) en los últimos \cmd{giro\_lento} (\SI{60}{\degree}). Un PI (\cmd{kp\_giro = 6}, \cmd{ki\_giro = 10}, arrancando en \cmd{pwm\_giro = 165}) ajusta el PWM y puede aplicar reversa para frenar. Además, si un pulso mueve menos de \SI{1}{\degree} el siguiente se alarga \SI{40}{\milli\second} (hasta \SI{250}{\milli\second}), y si tras \cmd{t\_giro} el carro giró menos de \SI{20}{\degree} sube el PWM a $255$ para destrabar la rueda. Con esto los giros bajaron a menos de \SI{2}{\degree} de error sin necesidad de pulsos.
+
+\begin{hallazgo}[Compensación por voltaje de batería (\texttt{firmware/volver})]
+Para que \cmd{t\_celda} no cambie a medida que se descarga el pack 2S de 18650, \texttt{firmware/volver} lee el voltaje por el divisor $6.6\,\text{k}\Omega / 2.2\,\text{k}\Omega$ + \SI{10}{\nano\farad} en \cmd{GPIO 1} (calibrado con \cmd{BAT CAL} a relación real $4.195$) y escala todo PWM así:
+\begin{equation}
+  \text{PWM}_{\text{ef}} = \mathrm{clip}\!\left(\mathrm{round}\!\left(\text{PWM} \cdot \frac{v_{\text{ref}} - v_{\text{caida}}}{V_{\text{bat,filt}} - v_{\text{caida}}}\right),\, 0,\, 255\right),
+  \label{eq:comp-bateria}
+\end{equation}
+donde $v_{\text{ref}}$ (\SI{7.80}{\volt}) es el voltaje de calibración y $v_{\text{caida}}$ (\SI{2.00}{\volt} en el L298N, frente a $\approx\SI{0.30}{\volt}$ en un DRV8833 o TB6612) descuenta lo que se come el driver. Filtramos $V_{\text{bat,filt}}$ con $\tau \approx \SI{1}{\second}$ a propósito: queremos seguir la descarga lenta del pack y no las caídas bruscas de cada arranque ($\sim\SI{0.6}{\volt}$ en giros y $\sim\SI{0.36}{\volt}$ al avanzar), porque compensar esos picos subiría el PWM y hundiría aún más el voltaje.
+\end{hallazgo}
+
+La misma rama \texttt{firmware/volver} añade el comando \cmd{VOLVER}: cuando el carro llega a la meta (\cmd{enMeta = true}), \cmd{planearVuelta()} corre BFS de vuelta hasta \cmd{mapa.inicio} y agrega los giros finales (\cmd{R}, \cmd{RR} o \cmd{L}) para dejarlo apuntando como empezó, ahorrando tiempo entre pruebas.
+
+% ----------------------------------------------------------------------------
+\subsection{Tolerancia a fallos, red y calibración en sitio}
+\label{subsec:blindaje-calibracion}
+
+El PC solo mira y despacha comandos; si el Wi-Fi muere a mitad de un \cmd{GO}, el robot sigue hasta la meta (como verificamos el 27/10/2026). La \cref{tab:blindaje} resume las protecciones que fuimos agregando tras cada fallo encontrado en pruebas.
+
+\begin{table}[htbp]
+  \centering
+  \caption{Mecanismos de blindaje ante fallos de red, sensores y alimentación.}
+  \label{tab:blindaje}
+  \small
+  \begin{tabularx}{\textwidth}{@{}>{\raggedright\arraybackslash}p{4.1cm} >{\raggedright\arraybackslash}p{4.3cm} >{\raggedright\arraybackslash}X@{}}
+    \toprule
+    \textbf{Fallo / Contingencia} & \textbf{Detección} & \textbf{Acción de mitigación} \\
+    \midrule
+    Bloqueo en log TCP~\badgeok & \cmd{select()} + \cmd{MSG\_DONTWAIT} & Descarta la línea si el socket no acepta sin esperar; evita el bloqueo de $10\times\SI{1}{\second}$ de \cmd{NetworkClient::write}. \\
+    Socket TCP huérfano~\badgeok & Nueva conexión entrante & \cmd{atenderTcp()} cierra el cliente previo y acepta el nuevo sin esperar \emph{timeout} TCP. \\
+    Signo IMU invertido~\badgeok/\badgepr & Error $>110^\circ$ (o retroceso $<-15^\circ$) & Detiene motores con \cmd{ERR} indicando ajustar \cmd{imu\_signo}. \\
+    Caída del bus I2C~\badgeok & $25$ fallos seguidos ($\approx\SI{50}{\milli\second}$) & Pasa automáticamente los giros a modo por tiempo (\cmd{t\_giro}). \\
+    Reinicio silencioso del MPU~\badgepr & \cmd{PWR\_MGMT\_1 != 0x01} cada $\sim\SI{50}{\milli\second}$ & Reconfigura registros al instante y reporta en \cmd{IMU DIAG} (evita deriva por chip dormido tras caídas de voltaje). \\
+    Timeout de recorrido~\badgeok & \cmd{millis() - tGo > 90000} & Ejecuta \cmd{detener()} a los \SI{90}{\second} si no llegó a la meta. \\
+    Búsqueda de hotspot~\badgeok & \cmd{T\_BUSCAR\_RED = 20000} ms & Corta el escaneo de canales tras \SI{20}{\second} para no volver inestable el AP propio. \\
+    \bottomrule
+  \end{tabularx}
+\end{table}
+
+Para trabajar con internet en el portátil mientras probamos el carro, el ESP32-S3 corre en modo \cmd{WIFI\_AP\_STA}: mantiene su red propia \texttt{agente-laberinto} (\texttt{192.168.4.1:23}, bajada a \SI{8.5}{dBm} contra \emph{brownouts}) y se conecta además a un \emph{hotspot} de \SI{2.4}{\giga\hertz} guardado en \cmd{Preferences} con \cmd{RED\_SSID} y \cmd{RED\_CLAVE}. Como el \emph{hotspot} de Android bloquea mDNS y \emph{broadcast}, \archivo{pc/enviar.py} y \archivo{pc/consola.py} buscan el carro en tres pasos: prueban la última IP guardada en \archivo{\textasciitilde/.agente-\allowbreak laberinto-\allowbreak ip}, luego \texttt{192.168.4.1} y, si ninguno responde, barren la subred \texttt{/24} en paralelo con \cmd{ThreadPoolExecutor(\allowbreak max\_workers=128)} hacia el puerto~23.
+
+Por último, calibrar en un salón nuevo no exige recompilar. Todos los valores de \archivo{parametros.h} se ajustan en vivo con \cmd{SET <param> <valor>}, \cmd{GET} y \cmd{SAVE} en \cmd{Preferences}. En unos \SI{10}{\minute} seguimos siempre el mismo orden~\cite{handoff2026doc}:
+\begin{enumerate}[leftmargin=1.4em]
+  \item Medir \cmd{SENS} sobre blanco y cinta para fijar \cmd{umbral} en el punto medio (cambia con la luz y la cinta).
+  \item Correr \cmd{IMU CAL}, luego cuatro \cmd{PASO R} y cuatro \cmd{PASO L} para confirmar que los giros queden dentro de $\pm 3\text{--}4^\circ$ (casi no cambia con el sitio gracias al giroscopio).
+  \item Lanzar \cmd{PASO F 2}, medir la distancia real $d$ con metro y ajustar $t_{\text{celda}}^{\text{nuevo}} = t_{\text{celda}} \cdot (2\,L_{\text{celda}}) / d$ (cambia con el tamaño de celda, el piso y las pilas).
+  \item Probar \cmd{PASO A} en sentido de bajada si el piso tiene pendiente y ajustar \cmd{t\_alinear} ($\SI{10}{\milli\second}\approx\SI{0.4}{\centi\meter}$) o bajar \cmd{pwm\_aprox} sin pasar debajo de $\sim 130$.
+  \item Correr \cmd{GO} varias veces y subir \cmd{kr} de a 2 si el carro se acerca a las líneas laterales en algún tramo recto.
+\end{enumerate}

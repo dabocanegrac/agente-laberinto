@@ -1,0 +1,127 @@
+% ============================================================================
+% Figura: Grafo de estados (f, c, ori) y sensibilidad al costo de giro
+% ============================================================================
+\begin{subfigure}[t]{0.50\textwidth}
+  \centering
+  \begin{tikzpicture}[
+    >=Stealth,
+    scale=0.92,
+    every node/.style={font=\scriptsize},
+    estado/.style={
+      rectangle, rounded corners=3pt, draw=azuldoc, fill=azulfondo,
+      thick, minimum width=1.18cm, minimum height=0.52cm, inner sep=2pt
+    },
+    vecino/.style={
+      rectangle, rounded corners=3pt, draw=unalverde, fill=verdefondo,
+      thick, minimum width=1.28cm, minimum height=0.52cm, inner sep=2pt
+    },
+    giroR/.style={->, thick, azuldoc, bend left=20},
+    giroL/.style={->, thick, azulclaro, dashed, bend left=20},
+    avance/.style={->, very thick, unalverde}
+  ]
+    % Celda (f, c)
+    \draw[grisborde, dashed, thick] (-2.1,-2.1) rectangle (2.1,2.1);
+    % Paredes en Norte y Oeste
+    \draw[rojoborde, line width=2.4pt] (-2.1, 2.1) -- (2.1, 2.1);
+    \draw[rojoborde, line width=2.4pt] (-2.1,-2.1) -- (-2.1,2.1);
+    \node[rojoborde, font=\tiny\bfseries, anchor=south] at (0, 2.12) {Pared (sin $F$)};
+    \node[rojoborde, font=\tiny\bfseries, rotate=90, anchor=south] at (-2.12, 0) {Pared (sin $F$)};
+
+    % Nodos de orientacion dentro de la celda (f, c)
+    \node[estado] (N) at (0,  1.25) {$\estado{f}{c}{N}$};
+    \node[estado] (E) at (1.25, 0)  {$\estado{f}{c}{E}$};
+    \node[estado] (S) at (0, -1.25) {$\estado{f}{c}{S}$};
+    \node[estado] (O) at (-1.25, 0) {$\estado{f}{c}{O}$};
+
+    % Ciclo horario (R) y antihorario (L)
+    \draw[giroR] (N) to node[above right=-1pt, pos=0.5, font=\tiny] {$R$} (E);
+    \draw[giroR] (E) to node[below right=-1pt, pos=0.5, font=\tiny] {$R$} (S);
+    \draw[giroR] (S) to node[below left=-1pt,  pos=0.5, font=\tiny] {$R$} (O);
+    \draw[giroR] (O) to node[above left=-1pt,  pos=0.5, font=\tiny] {$R$} (N);
+
+    \draw[giroL] (E) to node[below left=-2pt,  pos=0.5, font=\tiny] {$L$} (N);
+    \draw[giroL] (S) to node[above left=-2pt,  pos=0.5, font=\tiny] {$L$} (E);
+    \draw[giroL] (O) to node[above right=-2pt, pos=0.5, font=\tiny] {$L$} (S);
+    \draw[giroL] (N) to node[below right=-2pt, pos=0.5, font=\tiny] {$L$} (O);
+
+    % Celdas vecinas accesibles por F
+    \node[vecino] (EE) at (3.45, 0)     {$\estado{f}{c{+}1}{E}$};
+    \node[vecino] (SS) at (0, -3.25)    {$\estado{f{+}1}{c}{S}$};
+
+    \draw[avance] (E) -- node[above, font=\tiny\bfseries] {$F$ ($1.0$)} (EE);
+    \draw[avance] (S) -- node[right, font=\tiny\bfseries] {$F$ ($1.0$)} (SS);
+
+    % Leyenda compacta (debajo del nodo vecino inferior para evitar solapamientos)
+    \node[anchor=north west, align=left, font=\tiny, text=gristexto] at (-2.15, -3.72) {
+      \textcolor{azuldoc}{\textbf{---}} $R$: $(o{+}1)\bmod 4$, costo $c_{\text{giro}}$\\
+      \textcolor{azulclaro}{\textbf{- -}} $L$: $(o{+}3)\bmod 4$, costo $c_{\text{giro}}$\\
+      \textcolor{unalverde}{\textbf{---}} $F$: avanza si libre, costo $1.0$
+    };
+  \end{tikzpicture}
+  \caption{Transiciones locales en la celda $(f,c)$.}
+  \label{fig:espacio-estados-celda}
+\end{subfigure}%
+\hfill
+\begin{subfigure}[t]{0.48\textwidth}
+  \centering
+  \begin{tikzpicture}[
+    >=Stealth,
+    scale=0.92,
+    every node/.style={font=\scriptsize}
+  ]
+    % Grilla 3x3 de celdas de lado 1.45 (total 4.35 x 4.35)
+    \def\u{1.45}
+    % Fondo de inicio y meta
+    \fill[azulfondo] (0, 2*\u) rectangle (\u, 3*\u);
+    \fill[verdefondo] (2*\u, \u) rectangle (3*\u, 2*\u);
+
+    % Grilla interna punteada
+    \draw[grisborde, thin, dotted] (0,0) grid[step=\u] (3*\u, 3*\u);
+
+    % Borde exterior del laberinto
+    \draw[azuldoc, line width=2pt] (0,0) rectangle (3*\u, 3*\u);
+
+    % 3 paredes internas que definen el ejemplo
+    % Pared entre (0,1) y (0,2): x = 2*u, y in [2*u, 3*u]
+    \draw[azuldoc, line width=2pt] (2*\u, 2*\u) -- (2*\u, 3*\u);
+    % Pared entre (1,0) y (1,1): x = u, y in [u, 2*u]
+    \draw[azuldoc, line width=2pt] (\u, \u) -- (\u, 2*\u);
+    % Pared entre (1,1) y (2,1): y = u, x in [u, 2*u]
+    \draw[azuldoc, line width=2pt] (\u, \u) -- (2*\u, \u);
+
+    % Coordenadas de celda en esquina superior izquierda de cada celda
+    \foreach \f in {0,1,2} {
+      \foreach \c in {0,1,2} {
+        \node[font=\tiny, text=gristexto, anchor=north west]
+          at (\c*\u+0.04, 3*\u-\f*\u-0.04) {$(\f,\c)$};
+      }
+    }
+
+    % Etiquetas inicio y meta
+    \node[font=\tiny\bfseries, text=azuldoc, anchor=south west]
+      at (0.06, 2*\u+0.04) {$s_0{=}\estado{0}{0}{S}$};
+    \node[font=\tiny\bfseries, text=unalverde, anchor=south east]
+      at (3*\u-0.06, \u+0.04) {Meta $(1,2)$};
+
+    % Indicador de orientacion inicial (S)
+    \draw[->, thick, azuldoc] (0.5*\u, 2.62*\u) -- (0.5*\u, 2.34*\u);
+
+    % Ruta 1 (BFS): (0,0) -> (0,1) -> (1,1) -> (1,2)
+    \draw[->, very thick, azulclaro, dashed, rounded corners=4pt]
+      (0.5*\u, 2.5*\u) -- (1.5*\u, 2.5*\u) -- (1.5*\u, 1.5*\u) -- (2.38*\u, 1.5*\u);
+
+    % Ruta 2 (UCS/A*): (0,0) -> (1,0) -> (2,0) -> (2,1) -> (2,2) -> (1,2)
+    \draw[->, very thick, unalverde, rounded corners=4pt]
+      (0.35*\u, 2.35*\u) -- (0.35*\u, 0.4*\u) -- (2.6*\u, 0.4*\u) -- (2.6*\u, 1.38*\u);
+
+    % Comparacion cuantitativa debajo
+    \node[anchor=north west, align=left, font=\tiny, text=gristexto] at (-0.05, -0.15) {
+      \textcolor{azulclaro}{\textbf{- - Ruta 1 (BFS):}} \texttt{L F R F L F} ($3F$, $3$ giros, $6$ acc.)\\
+      \quad Costo $= 3{+}3c_{\text{giro}}$ ($4.5$ si $c_{\text{giro}}{=}0.5$; $\mathbf{10.5}$ si $c_{\text{giro}}{=}2.5$)\\[2pt]
+      \textcolor{unalverde}{\textbf{--- Ruta 2 (UCS/A*):}} \texttt{F F L F F L F} ($5F$, $2$ giros, $7$ acc.)\\
+      \quad Costo $= 5{+}2c_{\text{giro}}$ ($6.0$ si $c_{\text{giro}}{=}0.5$; $\mathbf{10.0}$ si $c_{\text{giro}}{=}2.5$)
+    };
+  \end{tikzpicture}
+  \caption{Rutas divergentes según $c_{\text{giro}}$.}
+  \label{fig:espacio-estados-costo}
+\end{subfigure}
