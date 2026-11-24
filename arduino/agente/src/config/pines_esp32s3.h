@@ -22,6 +22,10 @@ const int ADC_MAX = 4095;
 
 const uint8_t PIN_LED = 48;  // RGB (WS2812)
 
+// Voltaje del pack (después del interruptor general): divisor 6.6k al + / 2.2k a GND, 10 nF en el pin.
+// V_pin = V_bat / 4: 8.4 V -> 2.1 V (ADC1, se puede leer con el Wi-Fi prendido).
+const uint8_t PIN_BAT = 1;
+
 // Giroscopio MPU6050 (GY-521) por I2C, alimentado a 3.3V. AD0, XDA, XCL e INT sin conectar.
 const uint8_t PIN_IMU_SDA = 9;
 const uint8_t PIN_IMU_SCL = 10;
