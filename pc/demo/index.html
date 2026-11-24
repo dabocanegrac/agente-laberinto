@@ -45,8 +45,15 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 button.primario { background: var(--acento); border-color: var(--acento); color: #fff; }
 button.peligro { background: var(--error); border-color: var(--error); color: #fff; }
 button.grande { padding: 10px 22px; font-size: 16px; }
+button.activo { border-color: var(--acento); background: color-mix(in srgb, var(--acento) 14%, var(--piso)); color: var(--texto); }
+.grupo-btn { display: inline-flex; flex-wrap: wrap; gap: 4px; }
+.grupo-btn button { padding: 5px 10px; font-size: 13px; }
 .separador { flex: 1; }
 #lienzo { width: 100%; height: auto; display: block; max-height: 68vh; margin: 4px auto 10px; }
+.celda-hit { fill: transparent; }
+#lienzo.seleccionando .celda-hit { cursor: pointer; }
+#lienzo.seleccionando.modo-inicio .celda-hit:hover { fill: color-mix(in srgb, var(--carro) 16%, transparent); }
+#lienzo.seleccionando.modo-meta .celda-hit:hover { fill: color-mix(in srgb, var(--meta) 16%, transparent); }
 #carro { transition: transform .9s ease-in-out; }
 .leyenda { display: flex; flex-wrap: wrap; gap: 14px; font-size: 12px; color: var(--suave); margin-bottom: 10px; }
 .leyenda i { display: inline-block; width: 18px; height: 4px; border-radius: 2px; vertical-align: middle; margin-right: 5px; }
@@ -124,6 +131,22 @@ tr.alg.sel td { background: color-mix(in srgb, var(--acento) 12%, transparent); 
       <span class="separador"></span>
       <button id="b-enviar" disabled>Enviar al carro</button>
     </div>
+    <div class="fila">
+      <div class="grupo-btn" role="group" aria-label="Elegir salida y meta en el mapa">
+        <button type="button" id="b-modo-inicio" title="Toca aquí y luego una celda para mover la salida (o la misma celda para girar)">Salida: <strong id="t-salida">—</strong></button>
+        <button type="button" id="b-modo-meta" title="Toca aquí y luego una celda para mover la meta">Meta: <strong id="t-meta">—</strong></button>
+      </div>
+      <div class="grupo-btn" role="group" aria-label="Orientación inicial del carro">
+        <button type="button" data-ori="N" title="Mirando al Norte (arriba)">↑ N</button>
+        <button type="button" data-ori="E" title="Mirando al Este (derecha)">→ E</button>
+        <button type="button" data-ori="S" title="Mirando al Sur (abajo)">↓ S</button>
+        <button type="button" data-ori="O" title="Mirando al Oeste (izquierda)">← O</button>
+      </div>
+      <span class="separador"></span>
+      <button type="button" id="b-desde-aqui" title="Fijar la salida en la posición actual del carro" hidden>Desde aquí</button>
+      <button type="button" id="b-reset-puntos" title="Volver a la salida y meta originales del mapa" disabled>Restablecer</button>
+    </div>
+    <div class="nota" id="ayuda-seleccion" style="margin-top:6px">Toca «Salida» o «Meta» y luego una celda del mapa para cambiarlas.</div>
     <svg id="lienzo" role="img" aria-label="Mapa del laberinto con la ruta y la posición del carro"></svg>
     <div class="leyenda">
       <span><i style="background:var(--acento)"></i>Ruta planeada</span>
@@ -244,6 +267,7 @@ const e = {
   pose: null, angulo: 0, visitadas: new Set(), tInicio: 0,
   mapaCarro: null, rutaCarro: null, imuOn: false, sensOn: false, umbral: 130,
   parametros: {}, historiaBat: [],
+  inicioSel: null, metaSel: null, modoSeleccion: null, pendienteGo: false, timerGo: null,
 };
 
 // ---------- utilidades ----------
@@ -269,6 +293,17 @@ async function cmd(linea, auto = false) {
 }
 const centro = (f, c) => [MARGEN + c * CELDA + CELDA / 2, MARGEN + f * CELDA + CELDA / 2];
 const clave = (f, c) => f + "," + c;
+const mismosPuntos = (a, b) => a && b && a.length === b.length && a.every((v, i) => v === b[i]);
+
+function puntosPersonalizados() {
+  if (!e.mapa) return false;
+  return !mismosPuntos(e.mapa.inicio, e.mapa.inicio_defecto) || !mismosPuntos(e.mapa.meta, e.mapa.meta_defecto);
+}
+
+function cancelarGoPendiente() {
+  e.pendienteGo = false;
+  if (e.timerGo) { clearTimeout(e.timerGo); e.timerGo = null; }
+}
 
 // ---------- mapa ----------
 async function cargarMapas() {
@@ -282,20 +317,24 @@ async function cargarMapas() {
   await cargarMapa();
 }
 
-async function cargarMapa() {
+async function cargarMapa(opts = {}) {
   const ruta = $("sel-mapa").value;
   if (!ruta) return;
   try { localStorage.setItem("mapa", ruta); } catch (_) {}
-  const r = await fetch(`/api/mapa?ruta=${encodeURIComponent(ruta)}&costo_giro=${$("costo-giro").value || 0.5}`);
+  const params = new URLSearchParams({ ruta, costo_giro: $("costo-giro").value || 0.5 });
+  if (e.inicioSel) params.set("inicio", e.inicioSel.join(","));
+  if (e.metaSel) params.set("meta", e.metaSel.join(","));
+  const r = await fetch(`/api/mapa?${params.toString()}`);
   const m = await r.json();
   if (!r.ok) { aviso("Mapa inválido: " + m.error, "err"); return; }
   e.mapa = m;
   if (!e.algSel || !m.algoritmos.some((a) => a.nombre === e.algSel)) e.algSel = m.algoritmos.find((a) => a.nombre === "bfs") ? "bfs" : m.algoritmos[0]?.nombre;
   $("nombre-mapa").textContent = "· " + ruta.replace(/^maps\//, "").replace(/\.txt$/, "");
-  if (!e.enRuta) ponerEnSalida();
+  if (!e.enRuta && (opts.posicionar !== false || !e.pose)) ponerEnSalida();
   dibujar();
   tablaAlgoritmos();
   revisarMapaCarro();
+  actualizarBotones();
 }
 
 function ponerEnSalida() {
@@ -305,30 +344,78 @@ function ponerEnSalida() {
   e.visitadas = new Set([clave(f, c)]);
 }
 
+async function elegirCelda(f, c) {
+  if (e.moviendo || e.pendienteGo || !e.mapa || !e.modoSeleccion) return;
+  if (e.modoSeleccion === "inicio") {
+    const [fi, ci, oi] = e.mapa.inicio;
+    const ori = (fi === f && ci === c) ? ORI[(ORI.indexOf(oi) + 1) % 4] : oi;
+    e.inicioSel = [f, c, ori];
+    await cargarMapa({ posicionar: true });
+  } else if (e.modoSeleccion === "meta") {
+    e.metaSel = [f, c];
+    await cargarMapa({ posicionar: false });
+  }
+}
+
+function actualizarControlesPuntos() {
+  const m = e.mapa;
+  const ocupado = e.moviendo || e.pendienteGo;
+  if (ocupado && e.modoSeleccion) e.modoSeleccion = null;
+  $("b-modo-inicio").disabled = !m || ocupado;
+  $("b-modo-meta").disabled = !m || ocupado;
+  $("b-modo-inicio").classList.toggle("activo", e.modoSeleccion === "inicio");
+  $("b-modo-meta").classList.toggle("activo", e.modoSeleccion === "meta");
+  $("t-salida").textContent = m ? `(${m.inicio[0]},${m.inicio[1]}) ${m.inicio[2]}` : "—";
+  $("t-meta").textContent = m ? `(${m.meta[0]},${m.meta[1]})` : "—";
+  document.querySelectorAll("[data-ori]").forEach((b) => {
+    b.disabled = !m || ocupado;
+    b.classList.toggle("activo", !!m && b.dataset.ori === m.inicio[2]);
+  });
+  const puedeDesdeAqui = !!m && !ocupado && !!e.pose && (e.pose.f !== m.inicio[0] || e.pose.c !== m.inicio[1] || e.pose.o !== m.inicio[2]);
+  $("b-desde-aqui").hidden = !puedeDesdeAqui;
+  $("b-reset-puntos").disabled = !m || ocupado || !puntosPersonalizados();
+  const svg = $("lienzo");
+  svg.classList.toggle("seleccionando", !!e.modoSeleccion && !ocupado);
+  svg.classList.toggle("modo-inicio", e.modoSeleccion === "inicio");
+  svg.classList.toggle("modo-meta", e.modoSeleccion === "meta");
+  $("ayuda-seleccion").textContent =
+    e.modoSeleccion === "inicio" ? "Modo salida: haz clic en una celda para mover la salida (o en la misma celda para rotar 90°)." :
+    e.modoSeleccion === "meta" ? "Modo meta: haz clic en una celda para elegir la meta." :
+    "Toca «Salida» o «Meta» y luego una celda del mapa para cambiarlas.";
+}
+
 function dibujar() {
   const m = e.mapa, svg = $("lienzo");
   const ancho = m.cols * CELDA + 2 * MARGEN, alto = m.filas * CELDA + 2 * MARGEN;
   svg.setAttribute("viewBox", `0 0 ${ancho} ${alto}`);
   svg.innerHTML = "";
   el("rect", { x: MARGEN, y: MARGEN, width: m.cols * CELDA, height: m.filas * CELDA, fill: "var(--piso)" }, svg);
-  const gVis = el("g", { id: "visitadas" }, svg);
+  const gVis = el("g", { id: "visitadas", "pointer-events": "none" }, svg);
   for (const k of e.visitadas) {
     const [f, c] = k.split(",").map(Number);
     el("rect", { x: MARGEN + c * CELDA + 4, y: MARGEN + f * CELDA + 4, width: CELDA - 8, height: CELDA - 8, rx: 10, fill: "var(--visitada)" }, gVis);
   }
+  const gHit = el("g", { id: "celdas-interactivas" }, svg);
+  for (let f = 0; f < m.filas; f++) for (let c = 0; c < m.cols; c++) {
+    const r = el("rect", { x: MARGEN + c * CELDA, y: MARGEN + f * CELDA, width: CELDA, height: CELDA, class: "celda-hit" }, gHit);
+    r.onclick = () => elegirCelda(f, c);
+  }
   // rejilla y números de fila/columna
-  const g = el("g", { stroke: "var(--rejilla)", "stroke-width": 1 }, svg);
+  const g = el("g", { stroke: "var(--rejilla)", "stroke-width": 1, "pointer-events": "none" }, svg);
   for (let c = 1; c < m.cols; c++) el("line", { x1: MARGEN + c * CELDA, y1: MARGEN, x2: MARGEN + c * CELDA, y2: MARGEN + m.filas * CELDA }, g);
   for (let f = 1; f < m.filas; f++) el("line", { x1: MARGEN, y1: MARGEN + f * CELDA, x2: MARGEN + m.cols * CELDA, y2: MARGEN + f * CELDA }, g);
-  const gt = el("g", { fill: "var(--suave)", "font-size": 15, "text-anchor": "middle", "dominant-baseline": "central" }, svg);
+  const gt = el("g", { fill: "var(--suave)", "font-size": 15, "text-anchor": "middle", "dominant-baseline": "central", "pointer-events": "none" }, svg);
   for (let c = 0; c < m.cols; c++) el("text", { x: MARGEN + c * CELDA + CELDA / 2, y: MARGEN / 2 }, gt).textContent = c;
   for (let f = 0; f < m.filas; f++) el("text", { x: MARGEN / 2, y: MARGEN + f * CELDA + CELDA / 2 }, gt).textContent = f;
   // meta y salida
+  const gm = el("g", { "pointer-events": "none" }, svg);
   const [mf, mc] = m.meta, [mx, my] = centro(mf, mc);
-  el("rect", { x: mx - CELDA / 2 + 6, y: my - CELDA / 2 + 6, width: CELDA - 12, height: CELDA - 12, rx: 12, fill: "none", stroke: "var(--meta)", "stroke-width": 5 }, svg);
-  el("text", { x: mx, y: my - 27, fill: "var(--meta)", "font-size": 14, "font-weight": 700, "text-anchor": "middle" }, svg).textContent = "META";
+  const mismaCelda = m.inicio[0] === mf && m.inicio[1] === mc;
+  el("rect", { x: mx - CELDA / 2 + 6, y: my - CELDA / 2 + 6, width: CELDA - 12, height: CELDA - 12, rx: 12, fill: "none", stroke: "var(--meta)", "stroke-width": 5 }, gm);
+  el("text", { x: mx, y: mismaCelda ? my + 37 : my - 27, fill: "var(--meta)", "font-size": 14, "font-weight": 700, "text-anchor": "middle" }, gm).textContent = "META";
   const [sx, sy] = centro(m.inicio[0], m.inicio[1]);
-  el("text", { x: sx, y: sy - 28, fill: "var(--suave)", "font-size": 14, "font-weight": 700, "text-anchor": "middle" }, svg).textContent = "SALIDA";
+  el("rect", { x: sx - CELDA / 2 + 11, y: sy - CELDA / 2 + 11, width: CELDA - 22, height: CELDA - 22, rx: 10, fill: "none", stroke: "var(--suave)", "stroke-width": 2, "stroke-dasharray": "5 4", opacity: .65 }, gm);
+  el("text", { x: sx, y: sy - 28, fill: "var(--suave)", "font-size": 13, "font-weight": 700, "text-anchor": "middle" }, gm).textContent = `SALIDA · ${m.inicio[2]}`;
   // ruta del algoritmo elegido
   const alg = m.algoritmos.find((a) => a.nombre === e.algSel);
   if (alg && alg.estados) {
@@ -338,10 +425,10 @@ function dibujar() {
       if (puntos[puntos.length - 1] !== p) puntos.push(p);
     }
     const color = colorAlg(alg.nombre);
-    el("polyline", { points: puntos.join(" "), fill: "none", stroke: color, "stroke-width": 7, "stroke-linecap": "round", "stroke-linejoin": "round", opacity: .55 }, svg);
+    el("polyline", { points: puntos.join(" "), fill: "none", stroke: color, "stroke-width": 7, "stroke-linecap": "round", "stroke-linejoin": "round", opacity: .55, "pointer-events": "none" }, svg);
   }
   // paredes: N y O de cada celda, más S de la última fila y E de la última columna
-  const gp = el("g", { stroke: "var(--pared)", "stroke-width": 8, "stroke-linecap": "square" }, svg);
+  const gp = el("g", { stroke: "var(--pared)", "stroke-width": 8, "stroke-linecap": "square", "pointer-events": "none" }, svg);
   for (let f = 0; f < m.filas; f++) for (let c = 0; c < m.cols; c++) {
     const p = m.paredes[f][c], x = MARGEN + c * CELDA, y = MARGEN + f * CELDA;
     if (p & 1) el("line", { x1: x, y1: y, x2: x + CELDA, y2: y }, gp);
@@ -350,7 +437,7 @@ function dibujar() {
     if (c === m.cols - 1 && p & 2) el("line", { x1: x + CELDA, y1: y, x2: x + CELDA, y2: y + CELDA }, gp);
   }
   // carro
-  const carro = el("g", { id: "carro" }, svg);
+  const carro = el("g", { id: "carro", "pointer-events": "none" }, svg);
   el("rect", { x: -20, y: -24, width: 40, height: 46, rx: 11, fill: "var(--carro)" }, carro);
   el("path", { d: "M0,-16 L11,4 L0,-1 L-11,4 Z", fill: "#fff" }, carro);
   ubicarCarro(0);
@@ -403,23 +490,39 @@ function tablaAlgoritmos() {
 }
 
 // ---------- el mapa que tiene el carro ----------
+function mapaCarroCoincide() {
+  if (!e.mapa || !e.conectado || !e.mapaCarro) return false;
+  const m = e.mapa, c = e.mapaCarro;
+  const bfs = m.algoritmos.find((x) => x.nombre === "bfs");
+  if (!bfs || bfs.error || c.filas !== m.filas || c.cols !== m.cols) return false;
+  if (c.inicio) {
+    if (c.inicio !== m.inicio.join(",") || c.meta !== m.meta.join(",")) return false;
+  } else if (puntosPersonalizados()) {
+    return false;
+  }
+  return e.rutaCarro !== null && e.rutaCarro === bfs.ruta;
+}
+
 function revisarMapaCarro() {
   const a = $("aviso-mapa");
   if (!e.mapa || !e.conectado || !e.mapaCarro) { a.className = "aviso-mapa"; return; }
   const m = e.mapa, c = e.mapaCarro;
   const bfs = m.algoritmos.find((x) => x.nombre === "bfs");
   // Si el mapa llegó con «Enviar al carro» se conocen la salida y la meta; si no, solo el tamaño y la ruta.
-  const igual = c.filas === m.filas && c.cols === m.cols &&
-    (c.inicio ? c.inicio === m.inicio.join(",") && c.meta === m.meta.join(",") : !!e.rutaCarro && !!bfs && e.rutaCarro === bfs.ruta);
+  const tieneRuta = e.rutaCarro !== null;
+  const coincidePuntos = c.inicio
+    ? c.inicio === m.inicio.join(",") && c.meta === m.meta.join(",")
+    : !puntosPersonalizados() && tieneRuta && !!bfs && !bfs.error && e.rutaCarro === bfs.ruta;
+  const igual = c.filas === m.filas && c.cols === m.cols && coincidePuntos;
   if (!igual) {
     a.className = "aviso-mapa ver mal";
-    a.textContent = `El carro tiene otro mapa (${c.filas}x${c.cols}${c.inicio ? `, salida ${c.inicio}, meta ${c.meta}` : ""}${e.rutaCarro ? `, ruta ${e.rutaCarro}` : ""}). Usa «Enviar al carro» antes de GO.`;
-  } else if (e.rutaCarro && bfs && e.rutaCarro !== bfs.ruta) {
+    a.textContent = `El carro tiene otro mapa (${c.filas}x${c.cols}${c.inicio ? `, salida ${c.inicio}, meta ${c.meta}` : ""}${tieneRuta ? `, ruta ${e.rutaCarro || "(en meta)"}` : ""}). Usa «Enviar al carro» o pulsa GO para actualizarlo.`;
+  } else if (tieneRuta && bfs && !bfs.error && e.rutaCarro !== bfs.ruta) {
     a.className = "aviso-mapa ver mal";
-    a.textContent = `La ruta del carro (${e.rutaCarro}) no coincide con la de BFS en Python (${bfs.ruta}).`;
+    a.textContent = `La ruta del carro (${e.rutaCarro || "(vacía)"}) no coincide con la de BFS en Python (${bfs.ruta || "(vacía)"}).`;
   } else {
     a.className = "aviso-mapa ver ok";
-    a.textContent = e.rutaCarro ? `✓ El carro tiene este mapa y calculó la misma ruta que BFS en Python: ${e.rutaCarro}` : "✓ El carro tiene este mapa.";
+    a.textContent = tieneRuta ? `✓ El carro tiene este mapa y calculó la misma ruta que BFS en Python: ${e.rutaCarro || "(en la meta)"}` : "✓ El carro tiene este mapa.";
   }
 }
 
@@ -434,12 +537,26 @@ function procesar(t) {
     e.mapaCarro = { filas: +m[1], cols: +m[2], inicio: null, meta: null };   // INFO no dice salida ni meta
     cmd("RUTA", true);
   }
-  if (t.startsWith("RUTA") && !e.enRuta) { e.rutaCarro = t.slice(4).trim(); revisarMapaCarro(); }
+  if ((t === "RUTA" || t.startsWith("RUTA ")) && !e.enRuta) {
+    e.rutaCarro = t.slice(4).trim();
+    revisarMapaCarro();
+    if (e.pendienteGo && e.mapaCarro !== null) {
+      cancelarGoPendiente();
+      if (mapaCarroCoincide()) {
+        $("t-tiempo").textContent = "";
+        cmd("GO");
+      } else {
+        aviso("La ruta del carro no coincide con la de Python; no se inició GO", "err", 7000);
+        actualizarBotones();
+      }
+    }
+  }
   if ((m = t.match(/^# acciones=(\d+) costo=([\d.]+) expandidos=(\d+) tiempo=(\d+) us/))) {
     e.bfsCarro = `En el carro (ESP32-S3), BFS tardó ${m[4]} µs y expandió ${m[3]} nodos.`;
     tablaAlgoritmos();
   }
   if ((m = t.match(/^OK (GO|VOLVER) (\d+) acciones/))) {
+    cancelarGoPendiente();
     e.moviendo = e.enRuta = true;
     e.tInicio = performance.now();
     if (m[1] === "GO") { ponerEnSalida(); dibujar(); }
@@ -462,10 +579,11 @@ function procesar(t) {
   } else if (t.startsWith("OK PASO")) {
     e.moviendo = true; actualizarBotones();
   } else if (t === "OK fin paso" || t === "OK stop") {
+    cancelarGoPendiente();
     e.moviendo = e.enRuta = false; actualizarBotones();
   }
   if (t.startsWith("ERR") || t.startsWith("# ERR")) {
-    if (e.moviendo) { e.moviendo = e.enRuta = false; actualizarBotones(); }
+    if (e.pendienteGo || e.moviendo) { cancelarGoPendiente(); e.moviendo = e.enRuta = false; actualizarBotones(); }
     aviso(t.replace(/^#\s*/, ""), "err", 9000);
   }
   // telemetría
@@ -555,27 +673,95 @@ function parametros(texto) {
 
 // ---------- botones ----------
 function actualizarBotones() {
-  const c = e.conectado, mov = e.moviendo;
-  $("b-enviar").disabled = !c || mov;
-  $("b-go").disabled = !c || mov;
-  $("b-volver").disabled = !c || mov;
+  const c = e.conectado, mov = e.moviendo, bloq = mov || e.pendienteGo;
+  $("b-enviar").disabled = !c || bloq;
+  $("b-go").disabled = !c || bloq;
+  $("b-volver").disabled = !c || bloq;
   $("b-stop").disabled = !c;
-  document.querySelectorAll("[data-paso]").forEach((b) => (b.disabled = !c || mov));
-  $("p-fase").className = "punto " + (mov ? "aviso" : "");
-  $("t-fase").textContent = !c ? "—" : mov ? (e.enRuta ? "En ruta" : "Moviéndose") : "Quieto";
+  document.querySelectorAll("[data-paso]").forEach((b) => (b.disabled = !c || bloq));
+  $("p-fase").className = "punto " + (bloq ? "aviso" : "");
+  $("t-fase").textContent = !c ? "—" : e.pendienteGo ? "Enviando mapa…" : mov ? (e.enRuta ? "En ruta" : "Moviéndose") : "Quieto";
+  actualizarControlesPuntos();
 }
 
-$("sel-mapa").onchange = cargarMapa;
-$("costo-giro").onchange = cargarMapa;
-$("b-enviar").onclick = async () => {
+async function enviarMapaActual(silencioso = false) {
+  if (!e.mapa) return false;
   e.mapaCarro = null; e.rutaCarro = null;
-  const r = await fetch("/api/mapa/enviar", { method: "POST", body: JSON.stringify({ ruta: $("sel-mapa").value, costo_giro: +$("costo-giro").value }) });
+  const r = await fetch("/api/mapa/enviar", {
+    method: "POST",
+    body: JSON.stringify({
+      ruta: $("sel-mapa").value,
+      costo_giro: +$("costo-giro").value,
+      inicio: e.mapa.inicio,
+      meta: e.mapa.meta,
+    }),
+  });
   const j = await r.json();
-  aviso(j.ok ? "Mapa enviado: el carro calcula la ruta" : "No se pudo enviar el mapa" + (j.error ? ": " + j.error : ""), j.ok ? "info" : "err", 3000);
+  if (!j.ok || !silencioso) {
+    aviso(j.ok ? "Mapa enviado: el carro calcula la ruta" : "No se pudo enviar el mapa" + (j.error ? ": " + j.error : ""), j.ok ? "info" : "err", 3000);
+  }
+  return !!j.ok;
+}
+
+$("sel-mapa").onchange = () => {
+  cancelarGoPendiente();
+  e.inicioSel = null; e.metaSel = null; e.modoSeleccion = null;
+  cargarMapa({ posicionar: true });
 };
-$("b-go").onclick = () => { $("t-tiempo").textContent = ""; cmd("GO"); };
+$("costo-giro").onchange = () => {
+  cancelarGoPendiente();
+  cargarMapa({ posicionar: false });
+};
+$("b-modo-inicio").onclick = () => {
+  e.modoSeleccion = e.modoSeleccion === "inicio" ? null : "inicio";
+  actualizarControlesPuntos();
+};
+$("b-modo-meta").onclick = () => {
+  e.modoSeleccion = e.modoSeleccion === "meta" ? null : "meta";
+  actualizarControlesPuntos();
+};
+document.querySelectorAll("[data-ori]").forEach((b) => (b.onclick = async () => {
+  if (!e.mapa || e.moviendo || e.pendienteGo) return;
+  const [f, c] = e.mapa.inicio;
+  e.inicioSel = [f, c, b.dataset.ori];
+  await cargarMapa({ posicionar: true });
+}));
+$("b-desde-aqui").onclick = async () => {
+  if (!e.mapa || !e.pose || e.moviendo || e.pendienteGo) return;
+  e.inicioSel = [e.pose.f, e.pose.c, e.pose.o];
+  await cargarMapa({ posicionar: true });
+};
+$("b-reset-puntos").onclick = async () => {
+  if (!e.mapa || e.moviendo || e.pendienteGo) return;
+  const cambioInicio = !mismosPuntos(e.mapa.inicio, e.mapa.inicio_defecto);
+  e.inicioSel = null; e.metaSel = null; e.modoSeleccion = null;
+  await cargarMapa({ posicionar: cambioInicio });
+};
+$("b-enviar").onclick = () => enviarMapaActual(false);
+$("b-go").onclick = async () => {
+  const bfs = e.mapa?.algoritmos.find((a) => a.nombre === "bfs");
+  if (!bfs || bfs.error) { aviso("No hay ruta válida entre la salida y la meta", "err"); return; }
+  if (mapaCarroCoincide()) {
+    $("t-tiempo").textContent = "";
+    cmd("GO");
+    return;
+  }
+  e.pendienteGo = true;
+  e.timerGo = setTimeout(() => {
+    if (!e.pendienteGo) return;
+    cancelarGoPendiente();
+    actualizarBotones();
+    aviso("El carro no confirmó el mapa a tiempo", "err");
+  }, 6000);
+  actualizarBotones();
+  aviso("Enviando salida y meta al carro…", "info", 2500);
+  if (!(await enviarMapaActual(true))) {
+    cancelarGoPendiente();
+    actualizarBotones();
+  }
+};
 $("b-volver").onclick = () => cmd("VOLVER");
-$("b-stop").onclick = () => cmd("STOP");
+$("b-stop").onclick = () => { cancelarGoPendiente(); actualizarBotones(); cmd("STOP"); };
 document.querySelectorAll("[data-paso]").forEach((b) => (b.onclick = () => {
   const p = b.dataset.paso;
   if (e.pose && (p === "L" || p === "R")) { e.angulo += p === "R" ? 90 : -90; e.pose.o = ORI[(ORI.indexOf(e.pose.o) + (p === "R" ? 1 : 3)) % 4]; ubicarCarro(0.9); }
@@ -583,6 +769,7 @@ document.querySelectorAll("[data-paso]").forEach((b) => (b.onclick = () => {
     const [df, dc] = DELTA[e.pose.o], f = e.pose.f + df, c = e.pose.c + dc;
     if (f >= 0 && c >= 0 && f < e.mapa.filas && c < e.mapa.cols) { e.pose.f = f; e.pose.c = c; marcarVisitada(f, c); ubicarCarro(0.6); }
   }
+  actualizarControlesPuntos();
   cmd("PASO " + p);
 }));
 $("b-imu-on").onclick = () => cmd(e.imuOn ? "IMU OFF" : "IMU ON");
@@ -606,7 +793,9 @@ document.querySelectorAll(".pestanas button").forEach((b) => (b.onclick = () => 
   if (b.dataset.vista === "v-log") $("log").scrollTop = $("log").scrollHeight;   // oculta no baja sola
 }));
 document.addEventListener("keydown", (ev) => {   // barra espaciadora = STOP, para la demo
-  if (ev.key === " " && document.activeElement.tagName !== "INPUT" && e.conectado) { ev.preventDefault(); cmd("STOP"); }
+  if (ev.key === " " && document.activeElement.tagName !== "INPUT" && e.conectado) {
+    ev.preventDefault(); cancelarGoPendiente(); actualizarBotones(); cmd("STOP");
+  }
 });
 
 // ---------- log ----------
@@ -634,7 +823,7 @@ function conexion(conectado, ip) {
   $("p-con").className = "punto " + (conectado ? "ok" : "error");
   $("t-con").textContent = conectado ? `Carro en ${ip}` : "Buscando el carro…";
   if (conectado && !antes) { e.mapaCarro = null; cmd("INFO", true); cmd("BAT", true); cmd("GET", true); cmd("IMU DIAG", true); }
-  if (!conectado) { e.moviendo = e.enRuta = false; }
+  if (!conectado) { cancelarGoPendiente(); e.moviendo = e.enRuta = false; }
   actualizarBotones();
   revisarMapaCarro();
 }
@@ -655,9 +844,9 @@ function escuchar() {
 }
 
 setInterval(() => {   // consultas automáticas, solo con el carro quieto (el ADC demora unos ms el loop)
-  if (e.conectado && !e.moviendo) cmd("BAT", true);
+  if (e.conectado && !e.moviendo && !e.pendienteGo) cmd("BAT", true);
 }, 5000);
-setInterval(() => { if (e.conectado && !e.moviendo) cmd("INFO", true); }, 15000);
+setInterval(() => { if (e.conectado && !e.moviendo && !e.pendienteGo) cmd("INFO", true); }, 15000);
 
 cargarMapas().then(escuchar);
 actualizarBotones();

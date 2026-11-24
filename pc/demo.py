@@ -19,13 +19,14 @@ import threading
 import time
 import webbrowser
 from collections import deque
+from dataclasses import replace
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 from pc import mapa as mapas
 from pc.enviar import PUERTO_TCP, conectar_tcp
-from pc.modelo import COSTO_GIRO
+from pc.modelo import COSTO_GIRO, ORIENTACIONES, Estado
 from pc.planners import REGISTRO, ejecutar
 
 RAIZ = Path(__file__).resolve().parent.parent
@@ -103,8 +104,69 @@ def ruta_mapa(relativa):
     return p
 
 
-def describir_mapa(relativa, costo_giro):
-    m = mapas.leer(ruta_mapa(relativa))
+def _entero(valor, etiqueta):
+    if isinstance(valor, (bool, float)):
+        raise ValueError(f"{etiqueta} debe ser entero")
+    try:
+        return int(valor)
+    except (TypeError, ValueError):
+        raise ValueError(f"{etiqueta} inválido") from None
+
+
+def _parsear_inicio(valor):
+    if valor is None or valor == "":
+        return None
+    if isinstance(valor, Estado):
+        return valor
+    if isinstance(valor, str):
+        partes = [p.strip() for p in valor.split(",")]
+    elif isinstance(valor, (list, tuple)):
+        partes = list(valor)
+    else:
+        raise ValueError("inicio inválido: se esperaba fila,col,orientación")
+    if len(partes) != 3:
+        raise ValueError("inicio inválido: se esperaba fila,col,orientación")
+    fila = _entero(partes[0], "fila de inicio")
+    col = _entero(partes[1], "columna de inicio")
+    ori = str(partes[2]).strip().upper()
+    if len(ori) != 1 or ori not in ORIENTACIONES:
+        raise ValueError(f"orientación inválida: {partes[2]!r} (usar N, E, S u O)")
+    return Estado(fila, col, ori)
+
+
+def _parsear_meta(valor):
+    if valor is None or valor == "":
+        return None
+    if isinstance(valor, str):
+        partes = [p.strip() for p in valor.split(",")]
+    elif isinstance(valor, (list, tuple)):
+        partes = list(valor)
+    else:
+        raise ValueError("meta inválida: se esperaba fila,col")
+    if len(partes) != 2:
+        raise ValueError("meta inválida: se esperaba fila,col")
+    return (_entero(partes[0], "fila de meta"), _entero(partes[1], "columna de meta"))
+
+
+def aplicar_puntos(m, inicio=None, meta=None):
+    nuevo_inicio = _parsear_inicio(inicio)
+    nueva_meta = _parsear_meta(meta)
+    if nuevo_inicio is not None and not m.dentro(nuevo_inicio.fila, nuevo_inicio.col):
+        raise ValueError(f"inicio fuera del mapa: {nuevo_inicio.fila},{nuevo_inicio.col}")
+    if nueva_meta is not None and not m.dentro(*nueva_meta):
+        raise ValueError(f"meta fuera del mapa: {nueva_meta[0]},{nueva_meta[1]}")
+    return replace(
+        m,
+        inicio=nuevo_inicio if nuevo_inicio is not None else m.inicio,
+        meta=nueva_meta if nueva_meta is not None else m.meta,
+    )
+
+
+def describir_mapa(relativa, costo_giro, inicio=None, meta=None):
+    m_base = mapas.leer(ruta_mapa(relativa))
+    inicio_defecto = [m_base.inicio.fila, m_base.inicio.col, m_base.inicio.ori]
+    meta_defecto = list(m_base.meta)
+    m = aplicar_puntos(m_base, inicio=inicio, meta=meta)
     algoritmos = []
     for nombre in sorted(REGISTRO):
         cls = REGISTRO[nombre]
@@ -120,6 +182,7 @@ def describir_mapa(relativa, costo_giro):
     return {
         "ruta": relativa, "nombre": m.nombre, "filas": m.filas, "cols": m.cols, "paredes": m.paredes,
         "inicio": [m.inicio.fila, m.inicio.col, m.inicio.ori], "meta": list(m.meta),
+        "inicio_defecto": inicio_defecto, "meta_defecto": meta_defecto,
         "texto": mapas.a_texto(m), "algoritmos": algoritmos,
     }
 
@@ -148,7 +211,9 @@ def manejador(carro):
                     self.responder(200, listar_mapas())
                 elif url.path == "/api/mapa":
                     costo = float(q.get("costo_giro", [COSTO_GIRO])[0])
-                    self.responder(200, describir_mapa(q["ruta"][0], costo))
+                    inicio = q.get("inicio", [None])[0]
+                    meta = q.get("meta", [None])[0]
+                    self.responder(200, describir_mapa(q["ruta"][0], costo, inicio=inicio, meta=meta))
                 elif url.path == "/api/eventos":
                     self.eventos()
                 else:
@@ -166,6 +231,7 @@ def manejador(carro):
                     self.responder(200, {"ok": carro.enviar(linea, bool(datos.get("auto")))})
                 elif self.path == "/api/mapa/enviar":
                     m = mapas.leer(ruta_mapa(datos["ruta"]))
+                    m = aplicar_puntos(m, inicio=datos.get("inicio"), meta=datos.get("meta"))
                     costo = float(datos.get("costo_giro", COSTO_GIRO))
                     lineas = [f"COSTO_GIRO {costo:g}", "MAPA", *mapas.a_texto(m).splitlines(), "FIN"]
                     self.responder(200, {"ok": all(carro.enviar(l) for l in lineas)})
